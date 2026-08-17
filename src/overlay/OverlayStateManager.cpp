@@ -76,8 +76,8 @@ namespace Overlay {
 
         std::vector<Applied> live;
         for (auto location : kAllLocations) {
-            for (const auto& node : Skee::GetOccupiedSlots(actor, female, location)) {
-                auto texture = Skee::GetSlotTexture(actor, female, node);
+            for (const auto& node : Skee::GetOccupiedSlots(actor, location)) {
+                auto texture = Skee::GetSlotTexture(actor, node);
                 if (!texture || texture->empty()) continue;
 
                 const auto* entry = catalog->FindEntryByTexture(*texture);
@@ -117,7 +117,7 @@ namespace Overlay {
             return false;
         }
 
-        auto node = Skee::FindFreeSlot(actor, state->isFemale, entry.location);
+        auto node = Skee::FindFreeSlot(actor, entry.location);
         if (!node) {
             spdlog::warn("State: no free {} slot on {:08X} for {}",
                          Skee::LocationName(entry.location), actor->GetFormID(), entry.qualifiedId);

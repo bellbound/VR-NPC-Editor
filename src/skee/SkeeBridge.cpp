@@ -1,127 +1,101 @@
 #include "skee/SkeeBridge.h"
 
-#include "external/skee/IPluginInterface.h"
+#include "Config.h"
 
+#include <Windows.h>
+#include <filesystem>
 #include <spdlog/spdlog.h>
 
 namespace Skee {
     namespace {
-        // Shader override keys, shared with nioverride.psc. Index 0 selects the
-        // diffuse map for kTexture; the other keys take kIndexNone, which is what
-        // Papyrus expresses as -1.
-        constexpr skee_u16 kGlowColor     = 0;
-        constexpr skee_u16 kGlowIntensity = 1;
-        constexpr skee_u16 kTintColor     = 7;
-        constexpr skee_u16 kAlpha         = 8;
-        constexpr skee_u16 kTexture       = 9;
-        constexpr skee_u8  kDiffuseIndex  = 0;
-        constexpr skee_u8  kIndexNone     = 0xFF;
+        // Shader override keys, as documented at the top of nioverride.psc. Index 0
+        // selects the diffuse map for the texture key; the rest take -1, "not relevant".
+        constexpr int32_t kGlowColor     = 0;
+        constexpr int32_t kGlowIntensity = 1;
+        constexpr int32_t kTintColor     = 7;
+        constexpr int32_t kAlpha         = 8;
+        constexpr int32_t kTexture       = 9;
+        constexpr int32_t kDiffuseIndex  = 0;
+        constexpr int32_t kIndexNone     = -1;
 
-        IOverlayInterface*   g_overlay  = nullptr;
-        IOverrideInterface*  g_override = nullptr;
-        IActorUpdateManager* g_updates  = nullptr;
+        constexpr const char* kNiOverride = "NiOverride";
 
-        // The SKEE header forward-declares game types in the global namespace, so
-        // its pointers are opaque handles as far as CommonLibSSE is concerned.
-        ::TESObjectREFR* AsRefr(RE::Actor* actor) {
-            return reinterpret_cast<::TESObjectREFR*>(actor);
-        }
-        ::NiAVObject* AsNiObject(RE::NiAVObject* object) {
-            return reinterpret_cast<::NiAVObject*>(object);
-        }
+        bool g_available = false;
 
-        IOverlayInterface::OverlayLocation ToSkeeLocation(Location loc) {
+        struct SlotCounts {
+            uint32_t body = 6;   // skeevr.ini defaults; VR ships 6 where SE ships 8
+            uint32_t hand = 3;
+            uint32_t feet = 3;
+            uint32_t face = 3;
+        } g_slots;
+
+        uint32_t& CountFor(Location loc) {
             switch (loc) {
-                case Location::Hand: return IOverlayInterface::OverlayLocation::Hand;
-                case Location::Feet: return IOverlayInterface::OverlayLocation::Feet;
-                case Location::Face: return IOverlayInterface::OverlayLocation::Face;
+                case Location::Hand: return g_slots.hand;
+                case Location::Feet: return g_slots.feet;
+                case Location::Face: return g_slots.face;
                 case Location::Body:
-                default:             return IOverlayInterface::OverlayLocation::Body;
+                default:             return g_slots.body;
             }
         }
 
-        // RaceMenu's own node-name pattern, e.g. "Body [Ovl%d]".
-        const char* GetOverlayFormatSafe(Location loc) {
-            if (!g_overlay) return nullptr;
-            return g_overlay->GetOverlayFormat(IOverlayInterface::OverlayType::Normal, ToSkeeLocation(loc));
+        const char* NodePrefix(Location loc) {
+            switch (loc) {
+                case Location::Hand: return "Hands";
+                case Location::Feet: return "Feet";
+                case Location::Face: return "Face";
+                case Location::Body:
+                default:             return "Body";
+            }
         }
 
-        class StringSetter : public IOverrideInterface::SetVariant {
-        public:
-            explicit StringSetter(const char* value) : m_value(value) {}
-            Type GetType() override { return Type::String; }
-            const char* String() override { return m_value; }
-        private:
-            const char* m_value;
-        };
-
-        class IntSetter : public IOverrideInterface::SetVariant {
-        public:
-            explicit IntSetter(skee_i32 value) : m_value(value) {}
-            Type GetType() override { return Type::Int; }
-            skee_i32 Int() override { return m_value; }
-        private:
-            skee_i32 m_value;
-        };
-
-        class FloatSetter : public IOverrideInterface::SetVariant {
-        public:
-            explicit FloatSetter(float value) : m_value(value) {}
-            Type GetType() override { return Type::Float; }
-            float Float() override { return m_value; }
-        private:
-            float m_value;
-        };
-
-        // Captures whichever variant SKEE happens to hand back for a property.
-        class ValueGetter : public IOverrideInterface::GetVariant {
-        public:
-            void Int(const skee_i32 i) override { intValue = i; }
-            void Float(const float f) override { floatValue = f; }
-            void String(const char* str) override { if (str) stringValue = str; }
-            void Bool(const bool b) override { intValue = b ? 1 : 0; }
-            void TextureSet(const BGSTextureSet*) override {}
-
-            std::optional<skee_i32> intValue;
-            std::optional<float> floatValue;
-            std::optional<std::string> stringValue;
-        };
-
-        // The actor's third-person 3D, which ApplyNodeOverrides needs. Null while the
-        // actor is unloaded - every caller treats that as "skip, do not crash".
-        RE::NiAVObject* GetActor3D(RE::Actor* actor) {
-            return actor ? actor->Get3D(false) : nullptr;
+        RE::BSScript::IVirtualMachine* GetVM() {
+            auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+            if (!vm) spdlog::error("NiOverride: no Papyrus virtual machine");
+            return vm;
         }
 
-        void ApplyAppearance(::TESObjectREFR* refr, bool isFemale, const char* node, const Appearance& look,
-                             bool persistent) {
-            const auto set = [&](skee_u16 key, skee_u8 index, IOverrideInterface::SetVariant& value) {
-                if (persistent) {
-                    g_override->AddNodeOverride(refr, isFemale, node, key, index, value);
-                } else {
-                    g_override->SetNodeProperty(refr, false, node, key, index, value, true);
-                }
-            };
+        // Every NiOverride write is fire-and-forget: the VM only returns a value through
+        // an async callback, and none of these need one.
+        bool CallGlobal(const char* fnName, RE::BSScript::IFunctionArguments* args) {
+            auto* vm = GetVM();
+            if (!vm) return false;
 
-            StringSetter texture(look.texture.c_str());
-            set(kTexture, kDiffuseIndex, texture);
+            RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback{};
+            const bool ok = vm->DispatchStaticCall(kNiOverride, fnName, args, callback);
+            if (!ok) spdlog::warn("NiOverride: dispatch of {} failed", fnName);
+            return ok;
+        }
 
-            if (look.color) {
-                IntSetter tint(static_cast<skee_i32>(*look.color));
-                set(kTintColor, kIndexNone, tint);
-            }
-            if (look.alpha) {
-                FloatSetter alpha(*look.alpha);
-                set(kAlpha, kIndexNone, alpha);
-            }
-            if (look.glowColor) {
-                IntSetter glow(static_cast<skee_i32>(*look.glowColor));
-                set(kGlowColor, kIndexNone, glow);
-            }
-            if (look.glowIntensity) {
-                FloatSetter intensity(*look.glowIntensity);
-                set(kGlowIntensity, kIndexNone, intensity);
-            }
+        // RaceMenu parks unused overlay slots on this texture, so a node wearing it is free.
+        bool IsDefaultOverlayTexture(std::string_view path) {
+            if (path.empty()) return true;
+            return path.find("overlays\\default") != std::string_view::npos ||
+                   path.find("overlays/default") != std::string_view::npos;
+        }
+
+        std::string ToLower(std::string text) {
+            for (auto& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return text;
+        }
+
+        RE::BSGeometry* FindOverlayGeometry(RE::Actor* actor, const std::string& node) {
+            if (!actor || node.empty()) return nullptr;
+
+            auto* root = actor->Get3D(false);
+            if (!root) return nullptr;
+
+            // ODF writes these node names lowercase and it works, so the game's lookup is
+            // not case-sensitive - but try the canonical spelling first regardless.
+            auto* object = root->GetObjectByName(RE::BSFixedString(node.c_str()));
+            if (!object) object = root->GetObjectByName(RE::BSFixedString(ToLower(node).c_str()));
+            return object ? object->AsGeometry() : nullptr;
+        }
+
+        uint32_t ReadIniCount(const std::string& iniPath, const char* section, uint32_t fallback) {
+            const auto value = GetPrivateProfileIntA(section, "iNumOverlays", -1, iniPath.c_str());
+            if (value < 0) return fallback;
+            return static_cast<uint32_t>(value);
         }
     }
 
@@ -143,234 +117,185 @@ namespace Skee {
         return std::nullopt;
     }
 
-    bool IsAvailable() {
-        return g_overlay && g_override && g_updates;
-    }
+    bool IsAvailable() { return g_available; }
 
     bool Initialize() {
-        if (IsAvailable()) return true;
+        if (g_available) return true;
 
-        auto* messaging = SKSE::GetMessagingInterface();
-        if (!messaging) {
-            spdlog::error("SKEE: no SKSE messaging interface, cannot exchange interfaces");
+        // The VR extender is skeevr.dll; skee64.dll is the SE/AE name. Checking the
+        // loaded module avoids guessing at an SKSE plugin name that VR does not publish.
+        const bool vr = GetModuleHandleA("skeevr.dll") != nullptr;
+        const bool flat = GetModuleHandleA("skee64.dll") != nullptr;
+        if (!vr && !flat) {
+            spdlog::error("NiOverride: neither skeevr.dll nor skee64.dll is loaded - is RaceMenu installed?");
             return false;
         }
+        spdlog::info("NiOverride: found {}", vr ? "skeevr.dll (VR)" : "skee64.dll");
 
-        InterfaceExchangeMessage message;
-        messaging->Dispatch(InterfaceExchangeMessage::kMessage_ExchangeInterface, &message, sizeof(message), "skee");
+        // Slot counts are user-editable, so they are read rather than assumed.
+        std::filesystem::path iniPath(Config::GetSKSEPluginsPath());
+        iniPath /= vr ? "skeevr.ini" : "skee64.ini";
 
-        if (!message.interfaceMap) {
-            spdlog::warn("SKEE: interface exchange returned no map - RaceMenu (skeevr.dll) not loaded yet?");
-            return false;
+        std::error_code ec;
+        if (std::filesystem::exists(iniPath, ec)) {
+            const auto path = iniPath.string();
+            g_slots.body = ReadIniCount(path, "Overlays/Body", g_slots.body);
+            g_slots.hand = ReadIniCount(path, "Overlays/Hands", g_slots.hand);
+            g_slots.feet = ReadIniCount(path, "Overlays/Feet", g_slots.feet);
+            g_slots.face = ReadIniCount(path, "Overlays/Face", g_slots.face);
+            spdlog::info("NiOverride: slot counts from {}", path);
+        } else {
+            spdlog::warn("NiOverride: {} not found, using defaults", iniPath.string());
         }
+        spdlog::info("NiOverride: slots body={} hands={} feet={} face={}",
+                     g_slots.body, g_slots.hand, g_slots.feet, g_slots.face);
 
-        g_overlay  = static_cast<IOverlayInterface*>(message.interfaceMap->QueryInterface("Overlay"));
-        g_override = static_cast<IOverrideInterface*>(message.interfaceMap->QueryInterface("Override"));
-        g_updates  = static_cast<IActorUpdateManager*>(message.interfaceMap->QueryInterface("ActorUpdateManager"));
-
-        spdlog::info("SKEE: Overlay={} Override={} ActorUpdateManager={}",
-                     g_overlay ? "ok" : "MISSING",
-                     g_override ? "ok" : "MISSING",
-                     g_updates ? "ok" : "MISSING");
-
-        if (!IsAvailable()) {
-            spdlog::error("SKEE: required interfaces missing - overlay features disabled");
-            g_overlay = nullptr;
-            g_override = nullptr;
-            g_updates = nullptr;
-            return false;
-        }
-
-        spdlog::info("SKEE: interface versions Overlay={} Override={}", g_overlay->GetVersion(), g_override->GetVersion());
-        for (auto loc : {Location::Body, Location::Hand, Location::Feet, Location::Face}) {
-            const char* format = GetOverlayFormatSafe(loc);
-            spdlog::info("SKEE: {} slots={} format=\"{}\"", LocationName(loc), GetSlotCount(loc), format ? format : "(null)");
-        }
+        g_available = true;
         return true;
     }
 
-    uint32_t GetSlotCount(Location loc) {
-        if (!g_overlay) return 0;
-        return g_overlay->GetOverlayCount(IOverlayInterface::OverlayType::Normal, ToSkeeLocation(loc));
-    }
+    uint32_t GetSlotCount(Location loc) { return g_available ? CountFor(loc) : 0; }
 
     std::string GetNodeName(Location loc, uint32_t index) {
-        const char* format = GetOverlayFormatSafe(loc);
-        if (!format) return {};
-
-        // The format string is RaceMenu's own, e.g. "Body [Ovl%d]".
-        char buffer[128];
-        const int written = std::snprintf(buffer, sizeof(buffer), format, static_cast<int>(index));
-        if (written <= 0 || written >= static_cast<int>(sizeof(buffer))) {
-            spdlog::warn("SKEE: could not format node name from \"{}\" index {}", format, index);
-            return {};
-        }
-        return buffer;
+        return std::format("{} [Ovl{}]", NodePrefix(loc), index);
     }
 
     bool EnsureOverlays(RE::Actor* actor) {
-        if (!IsAvailable() || !actor) return false;
+        if (!g_available || !actor) return false;
 
-        auto* refr = AsRefr(actor);
-        if (g_overlay->HasOverlays(refr)) return true;
-
-        // bPlayerOnly=1 in skeevr.ini means NPCs get no overlay nodes until asked.
-        spdlog::debug("SKEE: installing overlay nodes on {:08X}", actor->GetFormID());
-        g_overlay->AddOverlays(refr, false);
-        return g_overlay->HasOverlays(refr);
+        // AddOverlays is idempotent, and asking HasOverlays would cost an async round
+        // trip for information we would only use to skip an idempotent call.
+        return CallGlobal("AddOverlays", RE::MakeFunctionArguments(static_cast<RE::TESObjectREFR*>(actor)));
     }
 
-    bool IsSlotOccupied(RE::Actor* actor, bool isFemale, const std::string& node) {
-        if (!IsAvailable() || !actor || node.empty()) return false;
-        return g_override->HasNodeOverride(AsRefr(actor), isFemale, node.c_str(), kTexture, kDiffuseIndex);
+    std::optional<std::string> GetSlotTexture(RE::Actor* actor, const std::string& node) {
+        auto* geometry = FindOverlayGeometry(actor, node);
+        if (!geometry) return std::nullopt;
+
+        auto& runtime = geometry->GetGeometryRuntimeData();
+        auto* effect = runtime.properties[RE::BSGeometry::States::kEffect].get();
+        auto* shader = netimmerse_cast<RE::BSLightingShaderProperty*>(effect);
+        if (!shader || !shader->material) return std::nullopt;
+
+        auto* material = static_cast<RE::BSLightingShaderMaterialBase*>(shader->material);
+        auto* textures = material->textureSet.get();
+        if (!textures) return std::nullopt;
+
+        const char* diffuse = textures->GetTexturePath(RE::BSTextureSet::Texture::kDiffuse);
+        if (!diffuse || !*diffuse) return std::nullopt;
+        return std::string(diffuse);
     }
 
-    std::optional<std::string> GetSlotTexture(RE::Actor* actor, bool isFemale, const std::string& node) {
-        if (!IsAvailable() || !actor || node.empty()) return std::nullopt;
-
-        ValueGetter getter;
-        if (!g_override->GetNodeOverride(AsRefr(actor), isFemale, node.c_str(), kTexture, kDiffuseIndex, getter)) {
-            return std::nullopt;
-        }
-        return getter.stringValue;
+    bool IsSlotOccupied(RE::Actor* actor, const std::string& node) {
+        auto texture = GetSlotTexture(actor, node);
+        return texture && !IsDefaultOverlayTexture(*texture);
     }
 
-    std::optional<std::string> FindFreeSlot(RE::Actor* actor, bool isFemale, Location loc) {
+    std::optional<std::string> FindFreeSlot(RE::Actor* actor, Location loc) {
         const uint32_t count = GetSlotCount(loc);
         for (uint32_t i = 0; i < count; ++i) {
             auto node = GetNodeName(loc, i);
-            if (node.empty()) continue;
-            if (!IsSlotOccupied(actor, isFemale, node)) return node;
+            if (!IsSlotOccupied(actor, node)) return node;
         }
-        spdlog::warn("SKEE: no free {} slot on {:08X} ({} in use)", LocationName(loc), actor ? actor->GetFormID() : 0, count);
+        spdlog::warn("NiOverride: all {} {} slots on {:08X} are in use",
+                     count, LocationName(loc), actor ? actor->GetFormID() : 0);
         return std::nullopt;
     }
 
-    std::vector<std::string> GetOccupiedSlots(RE::Actor* actor, bool isFemale, Location loc) {
+    std::vector<std::string> GetOccupiedSlots(RE::Actor* actor, Location loc) {
         std::vector<std::string> occupied;
         const uint32_t count = GetSlotCount(loc);
         for (uint32_t i = 0; i < count; ++i) {
             auto node = GetNodeName(loc, i);
-            if (!node.empty() && IsSlotOccupied(actor, isFemale, node)) occupied.push_back(std::move(node));
+            if (IsSlotOccupied(actor, node)) occupied.push_back(std::move(node));
         }
         return occupied;
     }
 
-    bool ApplyToSlot(RE::Actor* actor, bool isFemale, const std::string& node, const Appearance& look) {
-        if (!IsAvailable() || !actor || node.empty() || look.texture.empty()) return false;
+    namespace {
+        void WriteAppearance(RE::Actor* actor, bool isFemale, const std::string& node,
+                             const Appearance& look, bool persist) {
+            auto* refr = static_cast<RE::TESObjectREFR*>(actor);
 
-        spdlog::debug("SKEE: apply {:08X} female={} node=\"{}\" texture=\"{}\"",
+            CallGlobal("AddNodeOverrideString",
+                       RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
+                                                 int32_t(kTexture), int32_t(kDiffuseIndex),
+                                                 RE::BSFixedString(look.texture.c_str()), bool(persist)));
+
+            if (look.color) {
+                CallGlobal("AddNodeOverrideInt",
+                           RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
+                                                     int32_t(kTintColor), int32_t(kIndexNone),
+                                                     int32_t(*look.color), bool(persist)));
+            }
+            if (look.alpha) {
+                CallGlobal("AddNodeOverrideFloat",
+                           RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
+                                                     int32_t(kAlpha), int32_t(kIndexNone),
+                                                     float(*look.alpha), bool(persist)));
+            }
+            if (look.glowColor) {
+                CallGlobal("AddNodeOverrideInt",
+                           RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
+                                                     int32_t(kGlowColor), int32_t(kIndexNone),
+                                                     int32_t(*look.glowColor), bool(persist)));
+            }
+            if (look.glowIntensity) {
+                CallGlobal("AddNodeOverrideFloat",
+                           RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
+                                                     int32_t(kGlowIntensity), int32_t(kIndexNone),
+                                                     float(*look.glowIntensity), bool(persist)));
+            }
+        }
+    }
+
+    bool ApplyToSlot(RE::Actor* actor, bool isFemale, const std::string& node, const Appearance& look) {
+        if (!g_available || !actor || node.empty() || look.texture.empty()) return false;
+
+        spdlog::debug("NiOverride: apply {:08X} female={} node=\"{}\" texture=\"{}\"",
                       actor->GetFormID(), isFemale, node, look.texture);
 
-        ApplyAppearance(AsRefr(actor), isFemale, node.c_str(), look, true);
+        WriteAppearance(actor, isFemale, node, look, true);
+        Flush(actor);
+        return true;
+    }
+
+    bool PreviewOnSlot(RE::Actor* actor, bool isFemale, const std::string& node, const Appearance& look) {
+        if (!g_available || !actor || node.empty() || look.texture.empty()) return false;
+
+        spdlog::debug("NiOverride: preview {:08X} node=\"{}\" texture=\"{}\"",
+                      actor->GetFormID(), node, look.texture);
+
+        // persist=false keeps this out of RaceMenu's co-save and off any re-equip.
+        WriteAppearance(actor, isFemale, node, look, false);
         Flush(actor);
         return true;
     }
 
     bool ClearSlot(RE::Actor* actor, bool isFemale, const std::string& node) {
-        if (!IsAvailable() || !actor || node.empty()) return false;
+        if (!g_available || !actor || node.empty()) return false;
 
-        spdlog::debug("SKEE: clear {:08X} female={} node=\"{}\"", actor->GetFormID(), isFemale, node);
+        spdlog::debug("NiOverride: clear {:08X} female={} node=\"{}\"", actor->GetFormID(), isFemale, node);
 
-        auto* refr = AsRefr(actor);
-        // The same key set ODFHelperScript.psc clears, so a slot we release looks
-        // identical to one ODF released.
-        g_override->RemoveNodeOverride(refr, isFemale, node.c_str(), kTexture, kDiffuseIndex);
-        g_override->RemoveNodeOverride(refr, isFemale, node.c_str(), kTintColor, kIndexNone);
-        g_override->RemoveNodeOverride(refr, isFemale, node.c_str(), kAlpha, kIndexNone);
-        g_override->RemoveNodeOverride(refr, isFemale, node.c_str(), kGlowColor, kIndexNone);
-        g_override->RemoveNodeOverride(refr, isFemale, node.c_str(), kGlowIntensity, kIndexNone);
+        auto* refr = static_cast<RE::TESObjectREFR*>(actor);
+        // The same key set ODFHelperScript.psc clears, so a slot we release is
+        // indistinguishable from one ODF released.
+        const std::pair<int32_t, int32_t> keys[] = {
+            {kTexture, kDiffuseIndex}, {kTintColor, kIndexNone}, {kAlpha, kIndexNone},
+            {kGlowColor, kIndexNone}, {kGlowIntensity, kIndexNone},
+        };
+        for (const auto& [key, index] : keys) {
+            CallGlobal("RemoveNodeOverride",
+                       RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
+                                                 int32_t(key), int32_t(index)));
+        }
 
-        // Removing the override leaves the shader as it was, so reset the node and
-        // restamp whatever overrides remain.
-        g_overlay->RevertOverlay(refr, node.c_str(), 0, 0, true, false);
         Flush(actor);
         return true;
     }
 
-    SlotSnapshot SnapshotSlot(RE::Actor* actor, const std::string& node) {
-        SlotSnapshot snapshot;
-        snapshot.node = node;
-        if (!IsAvailable() || !actor || node.empty()) return snapshot;
-
-        auto* refr = AsRefr(actor);
-        const auto read = [&](skee_u16 key, skee_u8 index, ValueGetter& getter) {
-            return g_override->GetNodeProperty(refr, false, node.c_str(), key, index, getter);
-        };
-
-        ValueGetter texture, color, alpha, glowColor, glowIntensity;
-        if (read(kTexture, kDiffuseIndex, texture)) snapshot.texture = texture.stringValue;
-        if (read(kTintColor, kIndexNone, color)) snapshot.color = color.intValue;
-        if (read(kAlpha, kIndexNone, alpha)) snapshot.alpha = alpha.floatValue;
-        if (read(kGlowColor, kIndexNone, glowColor)) snapshot.glowColor = glowColor.intValue;
-        if (read(kGlowIntensity, kIndexNone, glowIntensity)) snapshot.glowIntensity = glowIntensity.floatValue;
-
-        return snapshot;
-    }
-
-    bool PreviewOnSlot(RE::Actor* actor, const std::string& node, const Appearance& look) {
-        if (!IsAvailable() || !actor || node.empty() || look.texture.empty()) return false;
-
-        spdlog::debug("SKEE: preview {:08X} node=\"{}\" texture=\"{}\"", actor->GetFormID(), node, look.texture);
-
-        // isFemale is irrelevant here: SetNodeProperty writes the live shader, not the
-        // gendered override database.
-        ApplyAppearance(AsRefr(actor), false, node.c_str(), look, false);
-        return true;
-    }
-
-    bool RestoreSlot(RE::Actor* actor, const SlotSnapshot& snapshot) {
-        if (!IsAvailable() || !actor || snapshot.node.empty()) return false;
-
-        spdlog::debug("SKEE: restore {:08X} node=\"{}\"", actor->GetFormID(), snapshot.node);
-
-        auto* refr = AsRefr(actor);
-        const char* node = snapshot.node.c_str();
-
-        // A slot with no recorded texture was empty before the preview; reverting the
-        // node puts back RaceMenu's transparent default rather than leaving the preview on.
-        if (!snapshot.texture || snapshot.texture->empty()) {
-            g_overlay->RevertOverlay(refr, node, 0, 0, true, false);
-            Flush(actor);
-            return true;
-        }
-
-        StringSetter texture(snapshot.texture->c_str());
-        g_override->SetNodeProperty(refr, false, node, kTexture, kDiffuseIndex, texture, true);
-
-        if (snapshot.color) {
-            IntSetter value(*snapshot.color);
-            g_override->SetNodeProperty(refr, false, node, kTintColor, kIndexNone, value, true);
-        }
-        if (snapshot.alpha) {
-            FloatSetter value(*snapshot.alpha);
-            g_override->SetNodeProperty(refr, false, node, kAlpha, kIndexNone, value, true);
-        }
-        if (snapshot.glowColor) {
-            IntSetter value(*snapshot.glowColor);
-            g_override->SetNodeProperty(refr, false, node, kGlowColor, kIndexNone, value, true);
-        }
-        if (snapshot.glowIntensity) {
-            FloatSetter value(*snapshot.glowIntensity);
-            g_override->SetNodeProperty(refr, false, node, kGlowIntensity, kIndexNone, value, true);
-        }
-        return true;
-    }
-
     void Flush(RE::Actor* actor) {
-        if (!IsAvailable() || !actor) return;
-
-        auto* object = GetActor3D(actor);
-        if (!object) {
-            // Unloaded actor: the database change stands, it just cannot be stamped yet.
-            spdlog::debug("SKEE: {:08X} has no 3D, deferring apply to the update manager", actor->GetFormID());
-            g_updates->AddNodeOverrideUpdate(actor->GetFormID());
-            g_updates->Flush();
-            return;
-        }
-
-        g_override->ApplyNodeOverrides(AsRefr(actor), AsNiObject(object), true);
-        g_updates->AddNodeOverrideUpdate(actor->GetFormID());
-        g_updates->Flush();
+        if (!g_available || !actor) return;
+        CallGlobal("ApplyNodeOverrides", RE::MakeFunctionArguments(static_cast<RE::TESObjectREFR*>(actor)));
     }
 }

@@ -353,27 +353,31 @@ namespace Overlay {
 
         EndPreview();
 
-        if (!Skee::EnsureOverlays(actor)) return;
+        Skee::EnsureOverlays(actor);
 
-        auto node = Skee::FindFreeSlot(actor, IsFemale(actor), entry->location);
+        auto node = Skee::FindFreeSlot(actor, entry->location);
         if (!node) {
             ShowInfo(L"No free overlay slot");
             return;
         }
 
-        m_previewSnapshot = Skee::SnapshotSlot(actor, *node);
-        if (Skee::PreviewOnSlot(actor, *node, entry->appearance)) {
+        if (Skee::PreviewOnSlot(actor, IsFemale(actor), *node, entry->appearance)) {
             m_previewIndex = index;
+            m_previewNode = *node;
         }
     }
 
     void MenuManager::EndPreview() {
         if (m_previewIndex == static_cast<size_t>(-1)) return;
 
-        if (auto* actor = GetTargetActor()) Skee::RestoreSlot(actor, m_previewSnapshot);
+        // The preview always went into a slot that was free, so clearing it restores the
+        // actor exactly - there is nothing underneath to put back.
+        if (auto* actor = GetTargetActor()) {
+            Skee::ClearSlot(actor, IsFemale(actor), m_previewNode);
+        }
 
         m_previewIndex = static_cast<size_t>(-1);
-        m_previewSnapshot = {};
+        m_previewNode.clear();
     }
 
     void MenuManager::OnOverlayActivated(size_t index) {

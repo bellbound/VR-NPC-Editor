@@ -64,7 +64,7 @@ namespace {
 void MessageHandler(SKSE::MessagingInterface::Message* message) {
     switch (message->type) {
         case SKSE::MessagingInterface::kPostPostLoad: {
-            // RaceMenu asks that the interface exchange happen here, not earlier.
+            // By now every SKSE plugin DLL is loaded, so the RaceMenu module check resolves.
             Skee::Initialize();
 
             auto* messaging = SKSE::GetMessagingInterface();

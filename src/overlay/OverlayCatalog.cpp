@@ -63,6 +63,54 @@ namespace Overlay {
             if (!parent.contains(key) || !parent[key].is_string()) return {};
             return parent[key].get<std::string>();
         }
+
+        // Several shipped packs are missing a comma between two members - skin-feature-
+        // overlays, nordic-warmaiden-bodyhair and wolfpaint all have it after
+        // "modVersion". ODF's parser tolerates this and loads them, so dropping them
+        // would cost real content (skin-feature-overlays alone has 159 usable overlays).
+        // This inserts the separator where a value clearly ends and the next member
+        // begins, and is only ever tried after a strict parse has already failed.
+        std::string RepairMissingCommas(const std::string& text) {
+            std::string repaired;
+            repaired.reserve(text.size() + 16);
+
+            bool inString = false;
+            bool escaped = false;
+            size_t lastValueEnd = std::string::npos;  // index in `repaired`
+
+            for (char c : text) {
+                if (inString) {
+                    repaired.push_back(c);
+                    if (escaped) {
+                        escaped = false;
+                    } else if (c == '\\') {
+                        escaped = true;
+                    } else if (c == '"') {
+                        inString = false;
+                        lastValueEnd = repaired.size();
+                    }
+                    continue;
+                }
+
+                if (c == '"') {
+                    // A new string starting straight after a finished value, with only
+                    // whitespace between them, means the comma was left out.
+                    if (lastValueEnd != std::string::npos &&
+                        repaired.find_first_not_of(" \t\r\n", lastValueEnd) == std::string::npos) {
+                        repaired.insert(lastValueEnd, ",");
+                    }
+                    inString = true;
+                    repaired.push_back(c);
+                    continue;
+                }
+
+                if (!std::isspace(static_cast<unsigned char>(c))) {
+                    lastValueEnd = std::string::npos;
+                }
+                repaired.push_back(c);
+            }
+            return repaired;
+        }
     }
 
     Catalog* Catalog::GetSingleton() {
@@ -153,21 +201,31 @@ namespace Overlay {
             ++m_fileCursor;
             ++m_packsSeen;
 
-            nlohmann::json root;
-            try {
-                std::ifstream file(path);
+            std::string raw;
+            {
+                std::ifstream file(path, std::ios::binary);
                 if (!file.is_open()) {
                     spdlog::warn("Catalog: cannot open {}", path);
                     ++m_packsBroken;
                     continue;
                 }
-                root = nlohmann::json::parse(file);
-            } catch (const std::exception& e) {
-                // Some shipped packs have malformed JSON; one bad pack must not take
-                // out the catalog, so it is named and skipped exactly like ODF does.
-                spdlog::warn("Catalog: skipping {} - invalid JSON: {}", path, e.what());
-                ++m_packsBroken;
-                continue;
+                raw.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+            }
+
+            nlohmann::json root;
+            try {
+                root = nlohmann::json::parse(raw);
+            } catch (const std::exception& strictError) {
+                try {
+                    root = nlohmann::json::parse(RepairMissingCommas(raw));
+                    spdlog::warn("Catalog: {} has malformed JSON ({}) - recovered by inserting the missing separator",
+                                 path, strictError.what());
+                } catch (const std::exception& repairError) {
+                    // One bad pack must never take out the whole catalog.
+                    spdlog::warn("Catalog: skipping {} - invalid JSON: {}", path, repairError.what());
+                    ++m_packsBroken;
+                    continue;
+                }
             }
 
             const auto modId = GetString(root, "modId");

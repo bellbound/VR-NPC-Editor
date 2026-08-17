@@ -70,8 +70,8 @@ namespace Overlay {
         // Retained so the selected pack can be re-scaled without rebuilding the row.
         std::vector<P3DUI::Element*> m_packElements;
 
-        // The live hover preview, if any.
+        // The live hover preview, if any, and the slot it was written into.
         size_t m_previewIndex = static_cast<size_t>(-1);
-        Skee::SlotSnapshot m_previewSnapshot;
+        std::string m_previewNode;
     };
 }
