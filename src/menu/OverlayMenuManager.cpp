@@ -133,9 +133,12 @@ namespace Overlay {
     void MenuManager::OpenForActor(RE::Actor* actor, bool isLeftHand) {
         if (!IsInitialized() || !actor) return;
 
+        // Reopening on a second NPC must not strand the preview on the first one:
+        // EndPreview still resolves the old target, so it has to run before the swap.
+        EndPreview();
+
         m_npcHandle = actor->GetHandle();
         m_targetPlayer = false;
-        m_previewIndex = static_cast<size_t>(-1);
         m_open = true;
 
         spdlog::info("Menu: opening for {:08X} ({})", actor->GetFormID(), actor->GetName());
@@ -478,6 +481,10 @@ namespace Overlay {
                     ShowInfo(L"Switch between the NPC and yourself");
                     return true;
                 }
+                if (id == kAnchorId) {
+                    ShowInfo(L"Grip to move the menu, trigger to close it");
+                    return true;
+                }
                 return false;
             }
 
@@ -487,7 +494,7 @@ namespace Overlay {
                     if (itemIndex == m_previewIndex) EndPreview();
                     return true;
                 }
-                if (id == kClearId || id == kTargetId) {
+                if (id == kClearId || id == kTargetId || id == kAnchorId) {
                     ClearInfo();
                     return true;
                 }
@@ -495,6 +502,13 @@ namespace Overlay {
             }
 
             case P3DUI::EventType::ActivateUp: {
+                // Grip drags the handle to reposition the menu; trigger on it closes,
+                // the same gesture VR Dress Up uses.
+                if (id == kAnchorId) {
+                    Close();
+                    return true;
+                }
+
                 const auto itemIndex = ParseIndex(id, kItemPrefix);
                 if (itemIndex != static_cast<size_t>(-1)) {
                     OnOverlayActivated(itemIndex);

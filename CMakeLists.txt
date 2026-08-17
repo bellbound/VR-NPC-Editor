@@ -15,7 +15,7 @@ include(cmake/sourcelist.cmake)
 
 # No COMPATIBLE_RUNTIMES here - the helper parses that list as version numbers.
 # Runtime differences are gated on REL::Module::IsVR() in code instead.
-add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
+add_commonlibsse_plugin(${PROJECT_NAME} AUTHOR "bellbound" SOURCES ${headers} ${sources})
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
