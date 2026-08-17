@@ -1,0 +1,27 @@
+set(headers ${headers}
+    src/PCH.h
+    src/log.h
+    src/util.h
+    src/Config.h
+    src/InputManager.h
+    src/InputDispatcher.h
+    src/MenuChecker.h
+    src/higgsinterface001.h
+    src/NpcUtils.h
+    src/util/VRNodes.h
+    src/util/FormKeyUtil.h
+    src/util/TextureUtil.h
+    src/skee/SkeeBridge.h
+    src/overlay/OverlayCatalog.h
+    src/overlay/OverlayStateManager.h
+    src/overlay/OdfWriter.h
+    src/menu/OverlayMenuManager.h
+    src/api/ThreeDUIInterface001.h
+    src/api/ThreeDUIActorMenu.h
+    src/external/skee/IPluginInterface.h
+    external/VRManagerAPI.h
+    external/PapyrusVRTypes.h
+    external/VRHookAPI.h
+    external/PapyrusVRAPI.h
+    external/OpenVRTypes.h
+)
