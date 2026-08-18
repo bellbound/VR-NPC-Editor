@@ -1,6 +1,7 @@
 set(sources ${sources}
     src/plugin.cpp
     src/Config.cpp
+    src/FrameHook.cpp
     src/InputManager.cpp
     src/MenuChecker.cpp
     src/higgsinterface001.cpp
@@ -10,7 +11,14 @@ set(sources ${sources}
     src/overlay/OverlayCatalog.cpp
     src/overlay/OverlayStateManager.cpp
     src/overlay/OdfWriter.cpp
+    src/overlay/OverlayColors.cpp
+    src/overlay/SlaveTatsImport.cpp
+    src/obody/ObodyBridge.cpp
+    src/health/HealthCheckManager.cpp
     src/menu/OverlayMenuManager.cpp
+    src/menu/BodyMenuManager.cpp
+    src/menu/EditSession.cpp
+    src/menu/MenuRouter.cpp
     src/api/ThreeDUIInterface001.cpp
     src/api/ThreeDUIActorMenu.cpp
     external/PapyrusVRTypes.cpp

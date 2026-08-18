@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <spdlog/spdlog.h>
 
-namespace Overlay {
+namespace NPCEditor::Overlay {
     namespace {
         constexpr uint32_t kActorRecord = 'AOVL';
         constexpr uint32_t kRecordVersion = 1;
@@ -105,7 +105,9 @@ namespace Overlay {
                            [&](const Applied& a) { return a.qualifiedId == entry.qualifiedId; });
     }
 
-    bool StateManager::Apply(RE::Actor* actor, const Entry& entry) {
+    bool StateManager::Apply(RE::Actor* actor, const Entry& entry,
+                             const Skee::Appearance* appearanceOverride,
+                             const std::string& preferredNode) {
         if (!actor || !Skee::IsAvailable()) return false;
         if (IsApplied(actor, entry)) return true;
 
@@ -117,14 +119,17 @@ namespace Overlay {
             return false;
         }
 
-        auto node = Skee::FindFreeSlot(actor, entry.location);
+        auto node = preferredNode.empty()
+            ? Skee::FindFreeSlot(actor, entry.location)
+            : std::optional<std::string>(preferredNode);
         if (!node) {
             spdlog::warn("State: no free {} slot on {:08X} for {}",
                          Skee::LocationName(entry.location), actor->GetFormID(), entry.qualifiedId);
             return false;
         }
 
-        if (!Skee::ApplyToSlot(actor, state->isFemale, *node, entry.appearance)) return false;
+        const auto& appearance = appearanceOverride ? *appearanceOverride : entry.appearance;
+        if (!Skee::ApplyToSlot(actor, state->isFemale, *node, appearance)) return false;
 
         state->applied.push_back({entry.qualifiedId, *node});
         spdlog::info("State: applied {} to {:08X} ({}) in \"{}\"",
@@ -148,6 +153,24 @@ namespace Overlay {
         return true;
     }
 
+    bool StateManager::Retint(RE::Actor* actor, const Entry& entry,
+                              const Skee::Appearance& appearance) {
+        if (!actor || !Skee::IsAvailable()) return false;
+
+        auto* state = GetOrCreate(actor);
+        if (!state) return false;
+
+        auto it = std::find_if(state->applied.begin(), state->applied.end(),
+                               [&](const Applied& a) { return a.qualifiedId == entry.qualifiedId; });
+        if (it == state->applied.end()) return false;
+
+        if (!Skee::ApplyToSlot(actor, state->isFemale, it->node, appearance)) return false;
+
+        spdlog::info("State: retinted {} on {:08X} (\"{}\")",
+                     entry.qualifiedId, actor->GetFormID(), it->node);
+        return true;
+    }
+
     size_t StateManager::ClearAll(RE::Actor* actor) {
         if (!actor || !Skee::IsAvailable()) return 0;
 
@@ -165,6 +188,37 @@ namespace Overlay {
         state->applied.clear();
         spdlog::info("State: cleared {} overlays from {:08X} ({})", count, actor->GetFormID(), state->editorId);
         return count;
+    }
+
+    size_t StateManager::ClearEverySlot(RE::Actor* actor) {
+        if (!actor || !Skee::IsAvailable()) return 0;
+
+        auto* state = GetOrCreate(actor);
+        if (!state) return 0;
+
+        const auto* catalog = Catalog::GetSingleton();
+        state->lastCleared.clear();
+
+        size_t cleared = 0;
+        for (auto location : kAllLocations) {
+            for (const auto& node : Skee::GetOccupiedSlots(actor, location)) {
+                // Only the ones we can name go on the restore list - "put it back" has
+                // to know which overlay it is putting back, and a foreign texture is not
+                // something we can reconstruct.
+                if (auto texture = Skee::GetSlotTexture(actor, node)) {
+                    if (const auto* entry = catalog->FindEntryByTexture(*texture)) {
+                        state->lastCleared.push_back(entry->qualifiedId);
+                    }
+                }
+                Skee::ClearSlot(actor, state->isFemale, node);
+                ++cleared;
+            }
+        }
+
+        state->applied.clear();
+        spdlog::info("State: emptied every overlay slot on {:08X} ({}) - {} cleared, {} of them ours",
+                     actor->GetFormID(), state->editorId, cleared, state->lastCleared.size());
+        return cleared;
     }
 
     size_t StateManager::RestoreAll(RE::Actor* actor) {

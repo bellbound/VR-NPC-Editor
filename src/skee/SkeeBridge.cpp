@@ -3,6 +3,7 @@
 #include "Config.h"
 
 #include <Windows.h>
+#include <cctype>
 #include <filesystem>
 #include <spdlog/spdlog.h>
 
@@ -21,6 +22,11 @@ namespace Skee {
         constexpr const char* kNiOverride = "NiOverride";
 
         bool g_available = false;
+
+        // What RaceMenu parks an unused overlay node on, from [Overlays/Data]
+        // sDefaultTexture. Read rather than assumed: it is a user-editable setting, and
+        // painting the wrong path over a node would leave the slot looking occupied.
+        std::string g_defaultTexture = "textures\actors\character\overlays\default.dds";
 
         struct SlotCounts {
             uint32_t body = 6;   // skeevr.ini defaults; VR ships 6 where SE ships 8
@@ -97,6 +103,20 @@ namespace Skee {
             if (value < 0) return fallback;
             return static_cast<uint32_t>(value);
         }
+
+        std::string ReadIniString(const std::string& iniPath, const char* section, const char* key,
+                                  const std::string& fallback) {
+            char buffer[MAX_PATH]{};
+            const auto length = GetPrivateProfileStringA(section, key, "", buffer, sizeof(buffer),
+                                                         iniPath.c_str());
+            if (length == 0) return fallback;
+
+            std::string value(buffer, length);
+            // RaceMenu's own ini writes trailing comments on some keys.
+            if (const auto comment = value.find(';'); comment != std::string::npos) value.erase(comment);
+            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
+            return value.empty() ? fallback : value;
+        }
     }
 
     const char* LocationName(Location loc) {
@@ -143,7 +163,9 @@ namespace Skee {
             g_slots.hand = ReadIniCount(path, "Overlays/Hands", g_slots.hand);
             g_slots.feet = ReadIniCount(path, "Overlays/Feet", g_slots.feet);
             g_slots.face = ReadIniCount(path, "Overlays/Face", g_slots.face);
+            g_defaultTexture = ReadIniString(path, "Overlays/Data", "sDefaultTexture", g_defaultTexture);
             spdlog::info("NiOverride: slot counts from {}", path);
+            spdlog::info("NiOverride: empty slots wear \"{}\"", g_defaultTexture);
         } else {
             spdlog::warn("NiOverride: {} not found, using defaults", iniPath.string());
         }
@@ -272,6 +294,15 @@ namespace Skee {
         return true;
     }
 
+    // Removing the overrides is not enough on its own. NiOverride paints an override
+    // onto the geometry and keeps no copy of what the node looked like before, so a slot
+    // emptied by removal alone goes on showing the overlay until something rebuilds the
+    // actor's 3D - which is why taking an overlay off left the NPC unchanged. The node is
+    // therefore repainted with RaceMenu's empty-slot texture as well, which is also what
+    // makes IsSlotOccupied see the slot as free again.
+    //
+    // Order matters and is preserved: the VM runs these in the order they are queued, so
+    // the removals land first and the repaint is what survives.
     bool ClearSlot(RE::Actor* actor, bool isFemale, const std::string& node) {
         if (!g_available || !actor || node.empty()) return false;
 
@@ -289,6 +320,16 @@ namespace Skee {
                        RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
                                                  int32_t(key), int32_t(index)));
         }
+
+        // Non-persistent: an empty slot is the absence of a choice, and writing that
+        // absence into RaceMenu's co-save would be a change of its own.
+        CallGlobal("AddNodeOverrideString",
+                   RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
+                                             int32_t(kTexture), int32_t(kDiffuseIndex),
+                                             RE::BSFixedString(g_defaultTexture.c_str()), bool(false)));
+        CallGlobal("AddNodeOverrideFloat",
+                   RE::MakeFunctionArguments(std::move(refr), bool(isFemale), RE::BSFixedString(node.c_str()),
+                                             int32_t(kAlpha), int32_t(kIndexNone), float(1.0f), bool(false)));
 
         Flush(actor);
         return true;

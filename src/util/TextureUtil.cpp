@@ -36,13 +36,13 @@ namespace TextureUtil {
         return stream.good();
     }
 
-    bool IsUsableSwatch(const std::string& dataRelativePath, uint32_t& width, uint32_t& height) {
+    Verdict Probe(const std::string& dataRelativePath, uint32_t& width, uint32_t& height) {
         width = 0;
         height = 0;
-        if (dataRelativePath.empty()) return false;
+        if (dataRelativePath.empty()) return Verdict::Missing;
 
         RE::BSResourceNiBinaryStream stream(dataRelativePath);
-        if (!stream.good()) return false;
+        if (!stream.good()) return Verdict::Missing;
 
         // DDS header: "DDS " magic, dwSize, dwFlags, dwHeight, dwWidth
         struct {
@@ -53,11 +53,15 @@ namespace TextureUtil {
             std::uint32_t width;
         } header{};
 
-        if (!stream.read(reinterpret_cast<char*>(&header), sizeof(header))) return false;
-        if (std::memcmp(header.magic, "DDS ", 4) != 0) return false;
+        if (!stream.read(reinterpret_cast<char*>(&header), sizeof(header))) return Verdict::NotDds;
+        if (std::memcmp(header.magic, "DDS ", 4) != 0) return Verdict::NotDds;
 
         width = header.width;
         height = header.height;
-        return IsPowerOfTwo(width) && IsPowerOfTwo(height);
+        return IsPowerOfTwo(width) && IsPowerOfTwo(height) ? Verdict::Ok : Verdict::BadDimensions;
+    }
+
+    bool IsUsableSwatch(const std::string& dataRelativePath, uint32_t& width, uint32_t& height) {
+        return Probe(dataRelativePath, width, height) == Verdict::Ok;
     }
 }

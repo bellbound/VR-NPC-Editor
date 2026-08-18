@@ -10,7 +10,11 @@ inline constexpr int kLogHistoryCount = 3;
 // spdlog's rotating sink rotates on size, not on startup, so the shift is done by
 // hand before any sink opens the file. Every step is error_code-based: a log file
 // held open by an editor must never throw out of SKSEPluginLoad.
-inline void RotateLogs(const std::filesystem::path& logFilePath) {
+//
+// The outcome is returned rather than discarded, so it can be logged once the sink
+// exists - a rotation that silently does nothing is indistinguishable from one that
+// works until you go looking for the previous run and it is not there.
+inline std::string RotateLogs(const std::filesystem::path& logFilePath) {
     std::error_code ec;
 
     const auto historyPath = [&logFilePath](int index) {
@@ -24,7 +28,25 @@ inline void RotateLogs(const std::filesystem::path& logFilePath) {
     for (int i = kLogHistoryCount - 1; i >= 1; --i) {
         std::filesystem::rename(historyPath(i), historyPath(i + 1), ec);
     }
+
+    if (!std::filesystem::exists(logFilePath, ec)) {
+        return "no previous log to rotate";
+    }
+
     std::filesystem::rename(logFilePath, historyPath(1), ec);
+    if (ec) {
+        // Fall back to a copy: on some layouts a rename across the virtualised file
+        // system fails where a plain copy succeeds.
+        std::error_code copyEc;
+        std::filesystem::copy_file(logFilePath, historyPath(1),
+                                   std::filesystem::copy_options::overwrite_existing, copyEc);
+        if (copyEc) {
+            return std::format("could not rotate previous log: rename failed ({}), copy failed ({})",
+                               ec.message(), copyEc.message());
+        }
+        return std::format("previous log copied to .log.1 (rename failed: {})", ec.message());
+    }
+    return "previous run moved to .log.1";
 }
 
 inline void SetupLog() {
@@ -33,7 +55,7 @@ inline void SetupLog() {
     auto pluginName = SKSE::PluginDeclaration::GetSingleton()->GetName();
     auto logFilePath = *logsFolder / std::format("{}.log", pluginName);
 
-    RotateLogs(logFilePath);
+    const auto rotationResult = RotateLogs(logFilePath);
 
     auto fileLoggerPtr = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFilePath.string(), true);
     auto loggerPtr = std::make_shared<spdlog::logger>("log", std::move(fileLoggerPtr));
@@ -46,6 +68,7 @@ inline void SetupLog() {
 
     spdlog::info("=== {} starting ===", pluginName);
     spdlog::info("Log file: {} (keeping {} previous runs)", logFilePath.string(), kLogHistoryCount);
+    spdlog::info("Log rotation: {}", rotationResult);
 
     Config::ReadConfigOptions();
     spdlog::set_level(Config::options.logLevel);

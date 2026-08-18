@@ -3,12 +3,17 @@
 #include "api/ThreeDUIActorMenu.h"
 #include "higgsinterface001.h"
 #include "log.h"
-#include "menu/OverlayMenuManager.h"
-#include "NpcUtils.h"
-#include "skee/SkeeBridge.h"
+#include "menu/MenuRouter.h"
 
 // Registers this mod with the 3DUI ActorMenu, which owns the shared
 // "grab an NPC, press trigger" gesture and disambiguates between mods that want it.
+//
+// One slot per editor rather than one for the mod. The two editors used to be reached
+// through a button on each other's tool row, which meant opening the wrong one first
+// and paying a rebuild to correct it; the actor menu already exists to ask "which of
+// these do you want", so the question is asked there. An actor only one editor applies
+// to never sees a wheel for it: the ActorMenu opens a lone eligible element straight
+// away.
 class InputDispatcher {
 public:
     static InputDispatcher* GetSingleton() {
@@ -25,18 +30,22 @@ public:
             return;
         }
 
-        auto config = P3DUI::ActorMenuElementConfig::Default("VRSkinOverlayMenu", "skinoverlays");
-        config.texturePath = "textures\\VRSkinOverlays\\paint-palette.dds";
-        config.tooltip = L"Skin Overlays";
-        config.scale = 1.4f;
+        // The palette and the T-pose figure: the same two pictures the tool rows used
+        // for the buttons this replaces, so the icons still say the same things.
+        const bool overlays = Register(actorMenu, "overlays", "textures\\VRNPCEditor\\paint-palette.dds",
+                                       L"Skin overlays", &InputDispatcher::IsOverlaysEligible,
+                                       &InputDispatcher::OnOverlaysActivated);
+        const bool body = Register(actorMenu, "body", "textures\\VRNPCEditor\\tpose.dds",
+                                   L"Body", &InputDispatcher::IsBodyEligible,
+                                   &InputDispatcher::OnBodyActivated);
 
-        if (!actorMenu->RegisterElement(config, &InputDispatcher::IsEligible, &InputDispatcher::OnActivate, this)) {
+        if (!overlays && !body) {
             spdlog::error("InputDispatcher: failed to register with ActorMenu");
             return;
         }
 
         m_initialized = true;
-        spdlog::info("InputDispatcher: registered with ActorMenu");
+        spdlog::info("InputDispatcher: registered with ActorMenu (overlays={}, body={})", overlays, body);
     }
 
 private:
@@ -44,33 +53,50 @@ private:
     InputDispatcher(const InputDispatcher&) = delete;
     InputDispatcher& operator=(const InputDispatcher&) = delete;
 
-    // Runs on every actor-menu open, so it stays cheap and rejects early.
-    static bool IsEligible(RE::Actor* actor, void*) {
-        if (!actor || actor->IsDead() || actor->IsChild()) return false;
+    bool Register(P3DUI::ActorMenuInterface* actorMenu, const char* elementId, const char* texture,
+                  const wchar_t* tooltip, P3DUI::ActorMenuEligibilityCallback isEligible,
+                  P3DUI::ActorMenuActivationCallback onActivate) {
+        auto config = P3DUI::ActorMenuElementConfig::Default("VRNPCEditor", elementId);
+        config.texturePath = texture;
+        config.tooltip = tooltip;
+        config.scale = 1.4f;
 
-        // Without RaceMenu's engine extender there is nothing this menu could do.
-        if (!Skee::IsAvailable()) return false;
+        if (actorMenu->RegisterElement(config, isEligible, onActivate, this)) return true;
+
+        spdlog::error("InputDispatcher: could not register the \"{}\" slot", elementId);
+        return false;
+    }
+
+    // Runs on every actor-menu open, once per slot, so it stays cheap and rejects early.
+    // Eligibility is not told which slot it is answering for, so there is one callback
+    // per slot and they share this.
+    static bool IsSlotAvailable(RE::Actor* actor, NPCEditor::Editor editor) {
+        if (!actor || actor->IsDead() || actor->IsChild()) return false;
 
         auto* race = actor->GetRace();
         if (race && !race->GetPlayable() && !race->AllowsPickpocket()) return false;
 
-        // Overlays chosen here are persisted through an ODF rule keyed on editorID, and
-        // a generic base record's editorID is shared by every actor spawned from it.
-        // Rather than silently spreading one choice across a whole template, the entry
-        // simply does not appear for those actors.
-        if (NpcUtils::GetPersistableEditorID(actor).empty()) {
-            spdlog::trace("InputDispatcher: {:08X} is not a unique NPC, not offering the menu", actor->GetFormID());
-            return false;
-        }
+        // The editor already up on this actor has nothing to offer. The other one does,
+        // and offering it is how you move between the two now that neither carries a
+        // button for the other - the router keeps the sitting open across the change.
+        auto* router = NPCEditor::MenuRouter::GetSingleton();
+        if (router->GetOpenTarget() == actor && router->IsEditorOpen(editor)) return false;
 
-        auto* menu = Overlay::MenuManager::GetSingleton();
-        if (!menu->IsInitialized()) return false;
-        if (menu->IsOpen() && menu->GetTargetActor() == actor) return false;
-
-        return true;
+        // An overlay on a shared base record cannot be persisted without spreading to
+        // every actor off that base, which is why a generic NPC gets the body slot and
+        // not the overlay one.
+        return router->IsAvailable(editor, actor);
     }
 
-    static void OnActivate(RE::Actor* actor, const char*, const char*, void*) {
+    static bool IsOverlaysEligible(RE::Actor* actor, void*) {
+        return IsSlotAvailable(actor, NPCEditor::Editor::Overlay);
+    }
+
+    static bool IsBodyEligible(RE::Actor* actor, void*) {
+        return IsSlotAvailable(actor, NPCEditor::Editor::Body);
+    }
+
+    static void Open(RE::Actor* actor, NPCEditor::Editor editor) {
         if (!actor) return;
 
         // The NPC is held in one hand and the trigger was pulled with the other, so the
@@ -81,7 +107,15 @@ private:
             if (leftObject && leftObject->As<RE::Actor>() == actor) npcInLeftHand = true;
         }
 
-        Overlay::MenuManager::GetSingleton()->OpenForActor(actor, !npcInLeftHand);
+        NPCEditor::MenuRouter::GetSingleton()->OpenForActor(actor, !npcInLeftHand, editor);
+    }
+
+    static void OnOverlaysActivated(RE::Actor* actor, const char*, const char*, void*) {
+        Open(actor, NPCEditor::Editor::Overlay);
+    }
+
+    static void OnBodyActivated(RE::Actor* actor, const char*, const char*, void*) {
+        Open(actor, NPCEditor::Editor::Body);
     }
 
     bool m_initialized = false;

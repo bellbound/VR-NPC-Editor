@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # The project name is the name of the SKSE .dll, and the name SKSE reports for
 # the plugin - which is also what the log file is named after.
-project(VRSkinOverlayMenu VERSION 0.1.0 LANGUAGES CXX)
+project(VRNPCEditor VERSION 0.1.0 LANGUAGES CXX)
 
 # directxtk must be found before CommonLibSSE: CommonLibSSE names
 # Microsoft::DirectXTK in its link interface and CMake resolves imported

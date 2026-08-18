@@ -3,13 +3,14 @@
 #include "Config.h"
 #include "overlay/OverlayCatalog.h"
 #include "overlay/OverlayStateManager.h"
+#include "overlay/SlaveTatsImport.h"
 
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-namespace Overlay::OdfWriter {
+namespace NPCEditor::Overlay::OdfWriter {
     namespace {
         std::string g_outputPath;
 
@@ -22,7 +23,7 @@ namespace Overlay::OdfWriter {
         if (g_outputPath.empty()) {
             std::filesystem::path path(Config::GetSKSEPluginsPath());
             path /= "ODF_distribution_rules";
-            path /= "VRSkinOverlayMenu_distribution.json";
+            path /= "VRNPCEditor_distribution.json";
             g_outputPath = path.string();
         }
         return g_outputPath;
@@ -33,6 +34,12 @@ namespace Overlay::OdfWriter {
         const auto* catalog = Catalog::GetSingleton();
 
         nlohmann::json rules = nlohmann::json::array();
+
+        // ODF can only resolve a rule against an overlay some mod config declares. The
+        // ODF packs declare their own; SlaveTats packs have no config at all until we
+        // write one, and we write one only for what is actually worn - see SlaveTats
+        // for why declaring a whole installed library is not harmless.
+        std::vector<const Entry*> appliedEntries;
 
         for (const auto& [key, actorState] : state.GetAll()) {
             if (actorState.editorId.empty() || actorState.applied.empty()) continue;
@@ -46,6 +53,7 @@ namespace Overlay::OdfWriter {
                 overlay["chance"] = 1.0;
 
                 if (const auto* entry = catalog->FindEntry(applied.qualifiedId)) {
+                    appliedEntries.push_back(entry);
                     if (entry->appearance.color) overlay["color"] = FormatColor(*entry->appearance.color);
                     if (entry->appearance.alpha) overlay["alpha"] = *entry->appearance.alpha;
                     if (entry->appearance.glowColor) {
@@ -103,6 +111,10 @@ namespace Overlay::OdfWriter {
             std::filesystem::remove(tempPath, ec);
             return false;
         }
+
+        // After the rules are safely in place: a declaration for a rule that failed to
+        // write is a pack the menu never asked ODF for.
+        SlaveTats::WriteAppliedConfigs(appliedEntries);
 
         spdlog::info("ODF: wrote {} rules to {}", document["distributionRules"].size(), outputPath);
         return true;

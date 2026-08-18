@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace Overlay {
+namespace NPCEditor::Overlay {
     class StateManager;
 
     // Mirrors the live overlay assignments into a single Overlay Distribution Framework

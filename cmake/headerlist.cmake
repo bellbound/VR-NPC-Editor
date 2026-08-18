@@ -3,6 +3,7 @@ set(headers ${headers}
     src/log.h
     src/util.h
     src/Config.h
+    src/FrameHook.h
     src/InputManager.h
     src/InputDispatcher.h
     src/MenuChecker.h
@@ -15,10 +16,19 @@ set(headers ${headers}
     src/overlay/OverlayCatalog.h
     src/overlay/OverlayStateManager.h
     src/overlay/OdfWriter.h
+    src/overlay/OverlayColors.h
+    src/overlay/SlaveTatsImport.h
+    src/obody/ObodyBridge.h
+    src/health/HealthCheckManager.h
+    src/dressup/UndressManager.h
     src/menu/OverlayMenuManager.h
+    src/menu/BodyMenuManager.h
+    src/menu/EditSession.h
+    src/menu/MenuRouter.h
     src/api/ThreeDUIInterface001.h
     src/api/ThreeDUIActorMenu.h
     src/external/skee/IPluginInterface.h
+    src/external/obody/API.h
     external/VRManagerAPI.h
     external/PapyrusVRTypes.h
     external/VRHookAPI.h

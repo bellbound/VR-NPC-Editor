@@ -47,11 +47,18 @@ namespace Skee {
     std::optional<std::string> GetSlotTexture(RE::Actor* actor, const std::string& node);
     bool IsSlotOccupied(RE::Actor* actor, const std::string& node);
 
+    // Note that a slot released moments ago still reads as occupied: every write goes
+    // through the Papyrus VM and lands a frame or more later, and this reads the actor's
+    // live 3D. A caller that means to reuse a slot it just gave up has to remember it
+    // rather than expect to find it here.
     std::optional<std::string> FindFreeSlot(RE::Actor* actor, Location loc);
     std::vector<std::string> GetOccupiedSlots(RE::Actor* actor, Location loc);
 
     // Persistent: recorded by RaceMenu and written to its co-save.
     bool ApplyToSlot(RE::Actor* actor, bool isFemale, const std::string& node, const Appearance& look);
+
+    // Empties a slot: drops the overrides and repaints the node with RaceMenu's own
+    // empty-slot texture. Both halves are needed - see the note on the definition.
     bool ClearSlot(RE::Actor* actor, bool isFemale, const std::string& node);
 
     // Non-persistent (NiOverride's own persist=false), so a preview leaves no trace.

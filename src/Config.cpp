@@ -1,6 +1,7 @@
 #include "Config.h"
 
 #include <Windows.h>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <spdlog/spdlog.h>
@@ -12,7 +13,7 @@ namespace Config {
     static std::string g_pluginsPath;
 
     // ===== Default INI content =====
-    static constexpr const char* DEFAULT_INI_CONTENT = R"(; VR Skin Overlay Menu Configuration
+    static constexpr const char* DEFAULT_INI_CONTENT = R"(; VR NPC Editor Configuration
 ; Delete this file to regenerate with defaults
 
 [General]
@@ -25,16 +26,57 @@ namespace Config {
 logLevel=info
 
 [Menu]
-; Preview an overlay on the actor while the hand hovers it (0=off, 1=on)
-; The preview is not persisted - only clicking an overlay commits it.
-bEnableHoverPreview=1
-
-; Size multiplier for the overlay swatches in the wheel
+; Size multiplier for the overlay swatches - the strip of what the actor is wearing
+; and the overlay shown in the middle of the stepper.
 fElementScale=1.0
 
 ; Pack selected when the menu opens, by its ODF modId (e.g. titkit).
 ; Leave empty to select the first pack alphabetically.
 sDefaultPack=
+
+; Read SlaveTats texture packs as well as ODF ones (0=off, 1=on). SlaveTats tattoos
+; are ordinary overlays, so any pack installed under
+; Data\textures\actors\character\slavetats shows up in the menu, one pack icon
+; per section. The SlaveTats mod itself is not needed and is never called.
+;
+; Only the tattoos actually applied to someone are ever declared to Overlay
+; Distribution Framework, and only so it can put them back on the next game start.
+; The rest stay between this menu and the pack, out of the pools other mods'
+; distribution rules draw from.
+bImportSlaveTats=1
+
+; Build the overlay catalog shortly after a game loads, instead of waiting for the
+; first time the menu is opened (0=off, 1=on). The build is a few milliseconds a frame
+; either way and never hitches, but it does take a moment to get through every pack
+; installed - doing it in the background means the menu has it ready when you open it
+; rather than showing "Loading overlays..." while you wait.
+;
+; Turn off to keep the mod idle until it is used. Nothing is lost: the first open
+; starts the same build, it just happens while you are looking at it.
+bPreloadCatalog=1
+
+[Body]
+; Show the body menu at all (0=off, 1=on). Independent of whether OBody NG is
+; detected - turning this off hides the menu even with OBody installed.
+bEnableBodyMenu=1
+
+; How long a chevron must be held before it starts stepping on its own, in
+; milliseconds. Below this a press is one step. Both editors use this: the body
+; menu's preset and weight steppers, and the overlay menu's overlay stepper.
+iPresetRepeatDelayMs=200
+
+; Gap between steps once a held chevron is repeating, in milliseconds. Every step
+; applies the preset or writes the overlay to the actor, so very low values ask a
+; lot of OBody and NiOverride.
+iPresetRepeatIntervalMs=300
+
+; Show the weight button (0=off, 1=on). It only ever appears on unique NPCs, because
+; weight lives on the base record and generic actors share theirs.
+bEnableWeightButton=1
+
+; Minimum gap between full 3D resets when the weight button is tapped repeatedly,
+; in milliseconds. A reset re-equips the actor's gear, so it is worth coalescing.
+iWeightResetDebounceMs=400
 
 [Persistence]
 ; Write applied overlays into SKSE/Plugins/ODF_distribution_rules so that
@@ -62,6 +104,25 @@ bWriteODFRules=1
             return true;
         } catch (...) {
             spdlog::warn("Config: Failed to parse bool for {}/{}", section, key);
+            return false;
+        }
+    }
+
+    // Clamped rather than rejected: an out-of-range timing value is a typo, and the
+    // nearest sane value is far more useful than silently keeping the default.
+    static bool GetConfigOptionInt(const char* section, const char* key, int* out, int min, int max) {
+        std::string data = GetConfigOption(section, key);
+        if (data.empty()) return false;
+        try {
+            int val = std::stoi(data);
+            if (val < min || val > max) {
+                spdlog::warn("Config: [{}] {} = {} out of range {}-{}, clamping", section, key, val, min, max);
+                val = std::clamp(val, min, max);
+            }
+            *out = val;
+            return true;
+        } catch (...) {
+            spdlog::warn("Config: Failed to parse int for {}/{}", section, key);
             return false;
         }
     }
@@ -156,10 +217,6 @@ bWriteODFRules=1
             spdlog::info("Config: logLevel not found, using default {}", LogLevelToString(options.logLevel));
         }
 
-        if (GetConfigOptionBool("Menu", "bEnableHoverPreview", &options.enableHoverPreview)) {
-            spdlog::info("Config: [Menu] bEnableHoverPreview = {}", options.enableHoverPreview);
-        }
-
         if (GetConfigOptionFloat("Menu", "fElementScale", &options.elementScale)) {
             // A zero or negative scale makes the swatches invisible and looks like a broken mod.
             if (options.elementScale < 0.1f || options.elementScale > 10.0f) {
@@ -173,6 +230,34 @@ bWriteODFRules=1
         options.defaultPack = GetConfigOption("Menu", "sDefaultPack");
         if (!options.defaultPack.empty()) {
             spdlog::info("Config: [Menu] sDefaultPack = {}", options.defaultPack);
+        }
+
+        if (GetConfigOptionBool("Body", "bEnableBodyMenu", &options.enableBodyMenu)) {
+            spdlog::info("Config: [Body] bEnableBodyMenu = {}", options.enableBodyMenu);
+        }
+
+        if (GetConfigOptionInt("Body", "iPresetRepeatDelayMs", &options.presetRepeatDelayMs, 0, 5000)) {
+            spdlog::info("Config: [Body] iPresetRepeatDelayMs = {}", options.presetRepeatDelayMs);
+        }
+
+        if (GetConfigOptionInt("Body", "iPresetRepeatIntervalMs", &options.presetRepeatIntervalMs, 30, 5000)) {
+            spdlog::info("Config: [Body] iPresetRepeatIntervalMs = {}", options.presetRepeatIntervalMs);
+        }
+
+        if (GetConfigOptionBool("Body", "bEnableWeightButton", &options.enableWeightButton)) {
+            spdlog::info("Config: [Body] bEnableWeightButton = {}", options.enableWeightButton);
+        }
+
+        if (GetConfigOptionInt("Body", "iWeightResetDebounceMs", &options.weightResetDebounceMs, 0, 5000)) {
+            spdlog::info("Config: [Body] iWeightResetDebounceMs = {}", options.weightResetDebounceMs);
+        }
+
+        if (GetConfigOptionBool("Menu", "bImportSlaveTats", &options.importSlaveTats)) {
+            spdlog::info("Config: [Menu] bImportSlaveTats = {}", options.importSlaveTats);
+        }
+
+        if (GetConfigOptionBool("Menu", "bPreloadCatalog", &options.preloadCatalog)) {
+            spdlog::info("Config: [Menu] bPreloadCatalog = {}", options.preloadCatalog);
         }
 
         if (GetConfigOptionBool("Persistence", "bWriteODFRules", &options.writeOdfRules)) {
@@ -202,7 +287,7 @@ bWriteODFRules=1
     const std::string& GetConfigPath() {
         if (g_configPath.empty()) {
             std::filesystem::path p(GetSKSEPluginsPath());
-            p /= "VRSkinOverlayMenu.ini";
+            p /= "VRNPCEditor.ini";
             g_configPath = p.string();
         }
         return g_configPath;
