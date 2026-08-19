@@ -8,6 +8,8 @@ set(sources ${sources}
     src/util/FormKeyUtil.cpp
     src/util/TextureUtil.cpp
     src/skee/SkeeBridge.cpp
+    src/tng/TngBridge.cpp
+    src/papyrus/PapyrusInterface.cpp
     src/overlay/OverlayCatalog.cpp
     src/overlay/OverlayStateManager.cpp
     src/overlay/OdfWriter.cpp

@@ -1,15 +1,22 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #include "api/ThreeDUIInterface001.h"
 
 namespace NPCEditor {
-    // The body editor: three short rows, bottom to top - tools, a BodySlide preset
-    // stepper, and a weight stepper - each stepper with its current value written out
-    // underneath it.
+    // The body editor: four short rows, bottom to top - tools, a BodySlide preset
+    // stepper, a weight stepper, and a TNG addon stepper - each stepper with its
+    // current value written out underneath it.
+    //
+    // The addon stepper is the odd one out. The other two read their current value
+    // from loaded forms on the spot; TNG has no C++ interface, so that row's contents
+    // have to come back through the Papyrus VM, which answers a frame or more after
+    // being asked. So it opens hidden and appears once its answers land - see
+    // PrimeAddon/PollAddon.
     //
     // It used to be a scrolling grid of every preset the actor had, two elements a row.
     // At 165 presets that is 330 projectiles, and 3DUI charges for every live one on
@@ -47,6 +54,7 @@ namespace NPCEditor {
         // there is nothing here worth chunking across frames.
         void PopulatePresetRow();
         void PopulateWeightRow();
+        void PopulateAddonRow();
         void PopulateToolRow();
 
         // Registered with FrameHook while the menu is open; drives the auto-repeat and
@@ -65,6 +73,16 @@ namespace NPCEditor {
         void UpdateWeightText();
         void SyncWeightStep();
 
+        // TNG addon
+        void PrimeAddon();
+        void PollAddon();
+        void StepAddon(int delta);
+        void ResetAddon();
+        void CommitAddon();
+        void UpdateAddonText();
+        std::wstring AddonTooltip() const;
+        bool HasAddonRow() const;
+
         void OnToolActivated(const std::string& id);
         void UndoChanges();
 
@@ -79,9 +97,11 @@ namespace NPCEditor {
         P3DUI::Root* m_root = nullptr;
         P3DUI::ScrollableContainer* m_presetRow = nullptr;
         P3DUI::ScrollableContainer* m_weightRow = nullptr;
+        P3DUI::ScrollableContainer* m_addonRow = nullptr;
         P3DUI::ScrollableContainer* m_toolRow = nullptr;
         P3DUI::Text* m_presetText = nullptr;
         P3DUI::Text* m_weightText = nullptr;
+        P3DUI::Text* m_addonText = nullptr;
         P3DUI::Text* m_infoText = nullptr;
 
         // The centre of each stepper, kept so its tooltip and its gauge texture can be
@@ -89,6 +109,7 @@ namespace NPCEditor {
         // step would destroy the element the hand is resting on.
         P3DUI::Element* m_presetIcon = nullptr;
         P3DUI::Element* m_weightIcon = nullptr;
+        P3DUI::Element* m_addonIcon = nullptr;
 
         bool m_open = false;
         RE::ActorHandle m_npcHandle;
@@ -117,5 +138,27 @@ namespace NPCEditor {
         int m_weightStep = 0;
         bool m_weightPending = false;
         Clock::time_point m_weightRequestedAt{};
+
+        // TNG's addon list for this actor, verbatim - its first two entries are the
+        // pseudo-options "reset to default" and "no genital", so a real addon starts at
+        // index 2 and `SetActorAddon` wants `index - 2`.
+        std::vector<std::string> m_tngEntries;
+        int m_tngIndex = 0;
+
+        // Where the actor was when the menu opened, so Undo can put it back. Undo is
+        // sold as "everything since you opened this NPC" and would be lying otherwise.
+        int m_tngInitialIndex = 0;
+
+        // TNG has no C++ interface, so the list above arrives through the Papyrus VM a
+        // frame or more after being asked for. `m_tngGeneration` is stamped on every
+        // dispatch and checked on every answer: without it, opening on one NPC and then
+        // quickly on another lands the first one's addons on the second.
+        std::uint64_t m_tngGeneration = 0;
+        bool m_tngResolved = false;
+        Clock::time_point m_tngPrimedAt{};
+
+        // Deferred like the weight commit: every write swaps the actor's skin.
+        bool m_tngPending = false;
+        Clock::time_point m_tngRequestedAt{};
     };
 }

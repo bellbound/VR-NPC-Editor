@@ -48,17 +48,14 @@ namespace NPCEditor::Overlay {
         bool Retint(RE::Actor* actor, const Entry& entry, const Skee::Appearance& appearance);
         bool IsApplied(RE::Actor* actor, const Entry& entry) const;
 
+        // Takes off what we are tracking and only that - overlays chargen or another
+        // mod put on the actor stay where they are. SyncFromActor is what decides who
+        // counts as ours: anything whose texture an installed pack declares, however it
+        // got there. Foreign textures are left holding their slots, which can leave the
+        // actor with none free; that is the honest outcome, since a slot we cannot name
+        // is not one we are entitled to empty.
         size_t ClearAll(RE::Actor* actor);
         size_t RestoreAll(RE::Actor* actor);
-
-        // Empties every overlay slot the actor has, including ones this mod never put
-        // there. ClearAll only reaches what we are tracking, and the player in particular
-        // arrives from chargen - or from another overlay mod - with all three hand and
-        // face slots already full of textures no installed pack declares. Those are
-        // invisible to us, so nothing we track can free them, and FindFreeSlot has
-        // nothing left to hand out: every apply and every preview on the player fails.
-        // This is the way out of that, so it is deliberately indiscriminate.
-        size_t ClearEverySlot(RE::Actor* actor);
 
         bool HasApplied(RE::Actor* actor) const;
         bool HasCleared(RE::Actor* actor) const;

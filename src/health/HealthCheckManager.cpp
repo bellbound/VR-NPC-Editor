@@ -10,6 +10,7 @@
 #include "NpcUtils.h"
 #include "obody/ObodyBridge.h"
 #include "skee/SkeeBridge.h"
+#include "tng/TngBridge.h"
 
 namespace NPCEditor::Health {
     namespace {
@@ -18,6 +19,7 @@ namespace NPCEditor::Health {
         constexpr const char* kRaceMenu = "RaceMenu VR (SKEE)";
         constexpr const char* kOdf = "Overlay Distribution Framework";
         constexpr const char* kObody = "OBody NG";
+        constexpr const char* kTng = "The New Gentleman";
         constexpr const char* kIcons = "VR NPC Editor icons";
 
         // Every texture the two menus can hand to 3DUI. A missing one is invisible in
@@ -28,8 +30,11 @@ namespace NPCEditor::Health {
         constexpr const char* kIconFiles[] = {
             "tpose.dds", "tpose_highlight.dds", "transparent.dds",
             "paint-palette.dds", "move.dds", "npc.dds", "player.dds",
-            "undress-full.dds", "redress-full.dds", "rewind.dds", "dice.dds",
+            "undress-full.dds", "redress-full.dds", "dice.dds",
+            // Discard and keep, in both menus.
+            "cross.dds", "check.dds",
             "weight_0.dds", "weight_25.dds", "weight_50.dds", "weight_75.dds", "weight_100.dds",
+            "tng-addon.dds", "tng-addon_highlight.dds",
         };
 
         std::vector<Dependency> g_dependencies;
@@ -142,6 +147,15 @@ namespace NPCEditor::Health {
             dep.present = Obody::IsAvailable();
             dep.detail = Obody::GetStatus();
         }
+
+        // Runs at kDataLoaded only. Unlike the others this probe resolves a Papyrus
+        // script type, which loads the .pex - there is nothing to load it from during
+        // the early pass, so asking then would record a false absence.
+        void ProbeTng() {
+            auto& dep = Slot(kTng, false);
+            dep.present = Tng::IsAvailable();
+            dep.detail = Tng::GetStatus();
+        }
     }
 
     void RunEarlyChecks() {
@@ -159,6 +173,7 @@ namespace NPCEditor::Health {
         ProbeHiggs();
         ProbeRaceMenu();
         ProbeObody();
+        ProbeTng();
         ProbeOdf();
         ProbeIcons();
 
@@ -167,11 +182,12 @@ namespace NPCEditor::Health {
             const char* mark = dep.present ? "OK  " : (dep.required ? "FAIL" : "----");
             spdlog::info("  [{}] {}: {}", mark, dep.name, dep.detail);
         }
-        spdlog::info("  features: overlays={} body={} weight={} clothes={}",
+        spdlog::info("  features: overlays={} body={} weight={} clothes={} tng={}",
                      IsFeatureAvailable(Feature::Overlays),
                      IsFeatureAvailable(Feature::Body),
                      IsFeatureAvailable(Feature::Weight),
-                     IsFeatureAvailable(Feature::ClothesToggle));
+                     IsFeatureAvailable(Feature::ClothesToggle),
+                     IsFeatureAvailable(Feature::Tng));
         spdlog::info("------------------------");
 
         // Repeated above error level, because a blank menu looks like a broken mod and
@@ -192,6 +208,8 @@ namespace NPCEditor::Health {
                 return Config::options.enableWeightButton && Present(kObody);
             case Feature::ClothesToggle:
                 return true;
+            case Feature::Tng:
+                return Config::options.enableTngAddon && Present(kTng);
             default:
                 return false;
         }

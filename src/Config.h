@@ -20,6 +20,9 @@ namespace Config {
         int  presetRepeatIntervalMs = 300; // Gap between steps once it is repeating
         bool enableWeightButton  = true;   // Show the weight cycle button on unique NPCs
         int  weightResetDebounceMs = 400;  // Minimum gap between DoReset3D calls
+        bool enableTngAddon      = true;   // Show the TNG addon stepper, if TNG is installed
+        int  tngApplyDebounceMs  = 400;    // Minimum gap between TNG addon writes
+        int  tngPrimeTimeoutMs   = 2000;   // Give up waiting for TNG's Papyrus answers after this
 
         // ===== Persistence =====
         bool writeOdfRules = true;         // Write choices to an ODF distribution rule file for next boot

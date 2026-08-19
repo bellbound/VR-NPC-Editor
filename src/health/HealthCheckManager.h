@@ -23,7 +23,8 @@ namespace NPCEditor::Health {
         Overlays,       // the ODF skin-overlay wheel
         Body,           // the OBody preset grid
         Weight,         // the weight cycle button
-        ClothesToggle   // undress/redress
+        ClothesToggle,  // undress/redress
+        Tng             // the TNG addon stepper
     };
 
     // Probes what can be probed this early: 3DUI, HIGGS, RaceMenu, OBody.
@@ -45,6 +46,13 @@ namespace NPCEditor::Health {
 
     // Weight lives on the base record, which non-unique actors share.
     bool CanEditWeight(RE::Actor* actor);
+
+    // There is deliberately no CanEditTng(actor). Every other per-actor test here can
+    // be answered from loaded forms on the spot, but TNG's can only be answered by the
+    // Papyrus VM, a frame or more after being asked. A blocking wait for it here would
+    // deadlock the VM the game thread has to pump, so the per-actor half of that gate
+    // lives in BodyMenuManager, which can afford to poll. Feature::Tng still answers
+    // the question this file exists for: could it ever be available at all.
 
     const std::vector<Dependency>& GetDependencies();
 }

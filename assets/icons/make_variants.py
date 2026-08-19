@@ -32,7 +32,7 @@ HL_LIGHT = "#2e2b54"
 HL_DARK = "#da619b"
 
 # Icons that get a plain _highlight variant.
-BASES = ["dice", "weight", "paint-palette"]
+BASES = ["dice", "weight", "paint-palette", "tng-addon"]
 
 # Icons that get fill-level variants, and the levels they get.
 GAUGES = {"weight": [0, 25, 50, 75, 100]}

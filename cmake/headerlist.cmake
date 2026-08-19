@@ -13,6 +13,10 @@ set(headers ${headers}
     src/util/FormKeyUtil.h
     src/util/TextureUtil.h
     src/skee/SkeeBridge.h
+    src/tng/TngBridge.h
+    src/papyrus/PapyrusInterface.h
+    src/util/GameThread.h
+    src/util/StringUtil.h
     src/overlay/OverlayCatalog.h
     src/overlay/OverlayStateManager.h
     src/overlay/OdfWriter.h

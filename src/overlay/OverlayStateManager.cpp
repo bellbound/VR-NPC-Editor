@@ -190,37 +190,6 @@ namespace NPCEditor::Overlay {
         return count;
     }
 
-    size_t StateManager::ClearEverySlot(RE::Actor* actor) {
-        if (!actor || !Skee::IsAvailable()) return 0;
-
-        auto* state = GetOrCreate(actor);
-        if (!state) return 0;
-
-        const auto* catalog = Catalog::GetSingleton();
-        state->lastCleared.clear();
-
-        size_t cleared = 0;
-        for (auto location : kAllLocations) {
-            for (const auto& node : Skee::GetOccupiedSlots(actor, location)) {
-                // Only the ones we can name go on the restore list - "put it back" has
-                // to know which overlay it is putting back, and a foreign texture is not
-                // something we can reconstruct.
-                if (auto texture = Skee::GetSlotTexture(actor, node)) {
-                    if (const auto* entry = catalog->FindEntryByTexture(*texture)) {
-                        state->lastCleared.push_back(entry->qualifiedId);
-                    }
-                }
-                Skee::ClearSlot(actor, state->isFemale, node);
-                ++cleared;
-            }
-        }
-
-        state->applied.clear();
-        spdlog::info("State: emptied every overlay slot on {:08X} ({}) - {} cleared, {} of them ours",
-                     actor->GetFormID(), state->editorId, cleared, state->lastCleared.size());
-        return cleared;
-    }
-
     size_t StateManager::RestoreAll(RE::Actor* actor) {
         if (!actor || !Skee::IsAvailable()) return 0;
 

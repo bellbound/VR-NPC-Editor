@@ -42,6 +42,14 @@ namespace Skee {
     // NPCs have no overlay nodes until this runs (bPlayerOnly=1). Idempotent.
     bool EnsureOverlays(RE::Actor* actor);
 
+    // Whether the overlay geometry for this kind of slot is actually on the actor yet.
+    //
+    // EnsureOverlays only queues the build - RaceMenu puts it on the SKSE task queue and
+    // the geometry appears a frame or more later. Every write below is a no-op against a
+    // node that is not there, silently, so anything that means to be seen has to wait for
+    // this to come back true first.
+    bool HasOverlayNodes(RE::Actor* actor, Location loc);
+
     // Reads the diffuse texture the overlay node currently carries. Empty when the slot
     // is unused - RaceMenu leaves those on its transparent default texture.
     std::optional<std::string> GetSlotTexture(RE::Actor* actor, const std::string& node);

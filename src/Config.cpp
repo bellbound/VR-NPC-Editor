@@ -78,6 +78,20 @@ bEnableWeightButton=1
 ; in milliseconds. A reset re-equips the actor's gear, so it is worth coalescing.
 iWeightResetDebounceMs=400
 
+; Show the TNG addon stepper (0=off, 1=on). It only appears when The New Gentleman
+; is installed, the actor is one TNG will modify, and at least one addon fits them.
+bEnableTngAddon=1
+
+; Minimum gap between TNG addon writes when the stepper is held, in milliseconds.
+; Every write swaps the actor's skin, so stepping through a long list without this
+; would apply each one in turn.
+iTngApplyDebounceMs=400
+
+; How long to wait for TNG to answer, in milliseconds, before giving up and leaving
+; the addon row hidden. TNG has no C++ interface, so the addon list has to come back
+; through the Papyrus VM, which answers a frame or more after being asked.
+iTngPrimeTimeoutMs=2000
+
 [Persistence]
 ; Write applied overlays into SKSE/Plugins/ODF_distribution_rules so that
 ; Overlay Distribution Framework reapplies them on the next game start.
@@ -250,6 +264,18 @@ bWriteODFRules=1
 
         if (GetConfigOptionInt("Body", "iWeightResetDebounceMs", &options.weightResetDebounceMs, 0, 5000)) {
             spdlog::info("Config: [Body] iWeightResetDebounceMs = {}", options.weightResetDebounceMs);
+        }
+
+        if (GetConfigOptionBool("Body", "bEnableTngAddon", &options.enableTngAddon)) {
+            spdlog::info("Config: [Body] bEnableTngAddon = {}", options.enableTngAddon);
+        }
+
+        if (GetConfigOptionInt("Body", "iTngApplyDebounceMs", &options.tngApplyDebounceMs, 0, 5000)) {
+            spdlog::info("Config: [Body] iTngApplyDebounceMs = {}", options.tngApplyDebounceMs);
+        }
+
+        if (GetConfigOptionInt("Body", "iTngPrimeTimeoutMs", &options.tngPrimeTimeoutMs, 100, 30000)) {
+            spdlog::info("Config: [Body] iTngPrimeTimeoutMs = {}", options.tngPrimeTimeoutMs);
         }
 
         if (GetConfigOptionBool("Menu", "bImportSlaveTats", &options.importSlaveTats)) {

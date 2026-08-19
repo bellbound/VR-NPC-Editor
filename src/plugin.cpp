@@ -15,6 +15,7 @@
 #include "overlay/OverlayCatalog.h"
 #include "overlay/OverlayStateManager.h"
 #include "skee/SkeeBridge.h"
+#include "tng/TngBridge.h"
 
 namespace {
     constexpr uint32_t kSerializationId = 'VNPE';
@@ -106,6 +107,11 @@ void MessageHandler(SKSE::MessagingInterface::Message* message) {
         case SKSE::MessagingInterface::kDataLoaded: {
             // A second attempt, in case RaceMenu registered after our PostPostLoad.
             if (!Skee::IsAvailable()) Skee::Initialize();
+
+            // Not at kPostPostLoad with the others: this one resolves a Papyrus script
+            // type, which loads the .pex, and there is nothing to load it from until
+            // the data files are in.
+            NPCEditor::Tng::Initialize();
 
             MenuChecker::RegisterEventSink();
 

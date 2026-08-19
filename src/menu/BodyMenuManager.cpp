@@ -11,6 +11,7 @@
 #include "menu/EditSession.h"
 #include "menu/MenuRouter.h"
 #include "obody/ObodyBridge.h"
+#include "tng/TngBridge.h"
 
 namespace NPCEditor {
     namespace {
@@ -32,13 +33,23 @@ namespace NPCEditor {
         constexpr const char* kWeightIconId = "vrnpce_body_weight_icon";
         constexpr const char* kWeightNextId = "vrnpce_body_weight_next";
 
+        constexpr const char* kAddonRowId   = "vrnpce_body_addonrow";
+        constexpr const char* kAddonTextId  = "vrnpce_body_addontext";
+        constexpr const char* kAddonPrevId  = "vrnpce_body_addon_prev";
+        constexpr const char* kAddonIconId  = "vrnpce_body_addon_icon";
+        constexpr const char* kAddonNextId  = "vrnpce_body_addon_next";
+
         constexpr const char* kAnchorId   = "vrnpce_body_orb";
         constexpr const char* kUndoId     = "vrnpce_tool_undo";
+        constexpr const char* kDoneId     = "vrnpce_tool_done";
 
         constexpr const char* kTexPreset   = "textures\\VRNPCEditor\\tpose.dds";
         constexpr const char* kTexPrev     = "textures\\VRNPCEditor\\chevron-left.dds";
         constexpr const char* kTexNext     = "textures\\VRNPCEditor\\chevron-right.dds";
-        constexpr const char* kTexUndo     = "textures\\VRNPCEditor\\rewind.dds";
+        // Same vocabulary as the overlay menu, where cross discards and check commits.
+        constexpr const char* kTexUndo     = "textures\\VRNPCEditor\\cross.dds";
+        constexpr const char* kTexDone     = "textures\\VRNPCEditor\\check.dds";
+        constexpr const char* kTexAddon    = "textures\\VRNPCEditor\\tng-addon.dds";
         constexpr const char* kAnchorModel = "meshes\\3DUI\\orb.nif";
 
         constexpr float kElementScale = 1.2f;
@@ -46,17 +57,27 @@ namespace NPCEditor {
         // A row and the value written under it are one thing, so they sit closer together
         // than one group sits to the next. Only the first number tightened: shrinking
         // both would scale the whole menu down rather than group it more clearly.
+        //
+        // The group gap came down from 8.75 once the addon stepper made this a
+        // four-row stack: the old spacing was set for three rows and left the taller
+        // menu reading as loose bands rather than one panel. It stays one number for
+        // every gap - the reason a row binds to its own label is that everything else
+        // is further away, and tightening only the preset-to-weight gap would break
+        // that by making one boundary look like an intra-group one.
         constexpr float kTextGap  = 4.2f;
-        constexpr float kGroupGap = 8.75f;
+        constexpr float kGroupGap = 6.5f;
 
         // Bottom to top: tools, the preset stepper and its name, the weight stepper and
-        // its percentage. Each text sits kTextGap under the row it belongs to.
+        // its percentage, then the TNG addon stepper and its name. Each text sits
+        // kTextGap under the row it belongs to.
         constexpr float kToolRowZ    = 0.0f;
         constexpr float kInfoZ       = kToolRowZ - kGroupGap;
         constexpr float kPresetTextZ = kToolRowZ + kGroupGap;
         constexpr float kPresetRowZ  = kPresetTextZ + kTextGap;
         constexpr float kWeightTextZ = kPresetRowZ + kGroupGap;
         constexpr float kWeightRowZ  = kWeightTextZ + kTextGap;
+        constexpr float kAddonTextZ  = kWeightRowZ + kGroupGap;
+        constexpr float kAddonRowZ   = kAddonTextZ + kTextGap;
 
         // 3DUI multiplies this by 1.25 internally, which is what VR Dress Up's info line
         // renders at. The old preset names rode along on the elements as label text,
@@ -172,6 +193,11 @@ namespace NPCEditor {
             return text;
         };
 
+        // Built unconditionally, TNG installed or not: rows are created once here and
+        // never destroyed, only their children refilled. Whether the addon stepper is
+        // offered is a question of visibility, decided per actor in PopulateAddonRow.
+        m_addonRow   = makeRow(kAddonRowId, kAddonRowZ);
+        m_addonText  = makeText(kAddonTextId, kAddonTextZ, kRowTextScale);
         m_weightRow  = makeRow(kWeightRowId, kWeightRowZ);
         m_weightText = makeText(kWeightTextId, kWeightTextZ, kRowTextScale);
         m_presetRow  = makeRow(kPresetRowId, kPresetRowZ);
@@ -203,6 +229,10 @@ namespace NPCEditor {
 
         SyncWeightStep();
 
+        // Asked for now so the answers have the whole open animation to arrive in. The
+        // row is not built here - it appears from Tick once the VM has replied.
+        PrimeAddon();
+
         // A switch leaves the previous menu's position behind as a local offset. An
         // open from the actor menu is meant to land on the hand, so it starts clean.
         m_root->SetLocalPosition(0.0f, 0.0f, 0.0f);
@@ -225,6 +255,10 @@ namespace NPCEditor {
         // A weight change that was still waiting out its debounce would otherwise be
         // written to the base record and never applied to the model.
         if (m_weightPending) CommitWeight();
+
+        // Same for the addon: the label showed the new one, so closing without writing
+        // it would silently discard a change the player watched themselves make.
+        if (m_tngPending) CommitAddon();
 
         if (m_root) {
             m_root->EndPositioning();
@@ -258,12 +292,14 @@ namespace NPCEditor {
             }
         }
 
+        PopulateAddonRow();
         PopulateWeightRow();
         PopulatePresetRow();
         PopulateToolRow();
 
         UpdatePresetText();
         UpdateWeightText();
+        UpdateAddonText();
 
         if (m_presets.empty()) {
             ShowInfo(Obody::IsReady() ? L"No BodySlide presets for this actor"
@@ -344,6 +380,48 @@ namespace NPCEditor {
         });
     }
 
+    // Whether this actor has an addon row at all.
+    //
+    // Two entries means TNG offered nothing but its own "default" and "no genital"
+    // pseudo-options, which is TNG's way of saying no addon fits this actor. A row
+    // built from that would be three icons that only ever toggle between nothing and
+    // nothing.
+    bool BodyMenuManager::HasAddonRow() const {
+        return m_tngEntries.size() > 2;
+    }
+
+    void BodyMenuManager::PopulateAddonRow() {
+        if (!m_addonRow) return;
+
+        // Same ordering as the other rows: Clear() destroys the element this points at.
+        m_addonIcon = nullptr;
+        m_addonRow->Clear();
+
+        if (!HasAddonRow()) {
+            m_addonRow->SetVisible(false);
+            if (m_addonText) m_addonText->SetVisible(false);
+            return;
+        }
+
+        PopulateHidden(m_addonRow, [this] {
+            auto add = [this](const char* id, const char* texture, const wchar_t* tooltip) -> P3DUI::Element* {
+                auto config = P3DUI::ElementConfig::Default(id);
+                config.texturePath = texture;
+                config.tooltip = tooltip;
+                config.scale = kElementScale;
+                config.facingMode = P3DUI::FacingMode::None;
+
+                auto* element = m_api->CreateElement(config);
+                if (element) m_addonRow->AddChild(element);
+                return element;
+            };
+
+            add(kAddonPrevId, kTexPrev, L"Previous addon - hold to run through them");
+            m_addonIcon = add(kAddonIconId, kTexAddon, L"Addon - tap to reset to default");
+            add(kAddonNextId, kTexNext, L"Next addon - hold to run through them");
+        });
+    }
+
     void BodyMenuManager::PopulateToolRow() {
         if (!m_toolRow) return;
 
@@ -359,6 +437,16 @@ namespace NPCEditor {
                 if (auto* element = m_api->CreateElement(config)) m_toolRow->AddChild(element);
             };
 
+            // Discard and keep bracket the orb, one either side, so the row stays
+            // symmetric about its handle rather than growing off one end. Both appear
+            // and disappear together - a keep button next to nothing to discard would
+            // only duplicate what the orb already does.
+            const bool hasChanges = EditSession::GetSingleton()->HasChanges();
+
+            if (hasChanges) {
+                add(kUndoId, kTexUndo, L"Discard everything since you opened this NPC");
+            }
+
             // Centre handle: grip drags the menu, trigger closes it.
             auto orbConfig = P3DUI::ElementConfig::Default(kAnchorId);
             orbConfig.modelPath = kAnchorModel;
@@ -368,8 +456,10 @@ namespace NPCEditor {
             orbConfig.facingMode = P3DUI::FacingMode::None;
             if (auto* orb = m_api->CreateElement(orbConfig)) m_toolRow->AddChild(orb);
 
-            if (EditSession::GetSingleton()->HasChanges()) {
-                add(kUndoId, kTexUndo, L"Undo everything since you opened this NPC");
+            if (hasChanges) {
+                // Closes, nothing more: every change is already applied to the actor by
+                // the time it can be undone, so there is nothing left here to commit.
+                add(kDoneId, kTexDone, L"Keep these changes and close");
             }
         });
     }
@@ -385,6 +475,11 @@ namespace NPCEditor {
             m_toolRowDirty = false;
             PopulateToolRow();
         }
+
+        // The one piece of this menu that cannot answer synchronously. Polled here
+        // rather than waited on anywhere: blocking the game thread for a VM answer
+        // deadlocks the VM, because the game thread is what pumps it.
+        PollAddon();
 
         const auto now = Clock::now();
 
@@ -406,6 +501,8 @@ namespace NPCEditor {
                 else if (m_repeatId == kPresetNextId) StepPreset(1);
                 else if (m_repeatId == kWeightPrevId) StepWeight(-1);
                 else if (m_repeatId == kWeightNextId) StepWeight(1);
+                else if (m_repeatId == kAddonPrevId)  StepAddon(-1);
+                else if (m_repeatId == kAddonNextId)  StepAddon(1);
             }
         }
 
@@ -413,6 +510,13 @@ namespace NPCEditor {
             const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_weightRequestedAt);
             if (waited.count() >= Config::options.weightResetDebounceMs) {
                 CommitWeight();
+            }
+        }
+
+        if (m_tngPending) {
+            const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_tngRequestedAt);
+            if (waited.count() >= Config::options.tngApplyDebounceMs) {
+                CommitAddon();
             }
         }
     }
@@ -544,12 +648,181 @@ namespace NPCEditor {
         Obody::ReapplyMorphs(actor);
     }
 
+    // ===== TNG addon =====
+    //
+    // The only asynchronous corner of this menu. TNG ships no C++ interface, so its
+    // addon list has to be asked for through the Papyrus VM and collected later.
+
+    void BodyMenuManager::PrimeAddon() {
+        m_tngEntries.clear();
+        m_tngIndex = 0;
+        m_tngInitialIndex = 0;
+        m_tngPending = false;
+
+        if (!Health::IsFeatureAvailable(Health::Feature::Tng)) {
+            // Nothing will ever arrive, so the poll must not sit waiting for it.
+            m_tngResolved = true;
+            return;
+        }
+
+        // Bumped on every open, so an answer that was in flight for the previous NPC
+        // is recognisable as stale when it lands.
+        ++m_tngGeneration;
+        m_tngResolved = false;
+        m_tngPrimedAt = Clock::now();
+
+        Tng::PrimeActor(GetTargetActor(), m_tngGeneration);
+    }
+
+    void BodyMenuManager::PollAddon() {
+        if (m_tngResolved) return;
+
+        if (auto state = Tng::Collect(m_tngGeneration)) {
+            m_tngResolved = true;
+
+            // A race TNG will not modify gets no row, whatever it listed.
+            m_tngEntries = state->modifiable ? std::move(state->entries)
+                                             : std::vector<std::string>{};
+            m_tngIndex = state->index;
+            m_tngInitialIndex = m_tngIndex;
+
+            // Info, not debug, and it names both gates: a hidden row is otherwise
+            // indistinguishable from a broken one, and the default log level is info -
+            // so a debug line here is a diagnostic nobody testing this can actually
+            // read. Once per menu open, so it is not chatter.
+            const std::string canModify =
+                state->rawCanModify ? std::to_string(*state->rawCanModify)
+                                    : std::string("not an Int");
+
+            if (HasAddonRow()) {
+                spdlog::info("Body menu: TNG offers {} addon(s) (CanModifyActor={}), starting on "
+                             "entry {} of {}",
+                             m_tngEntries.size() - 2, canModify, m_tngIndex + 1,
+                             m_tngEntries.size());
+            } else if (!state->modifiable) {
+                spdlog::info("Body menu: no TNG row - CanModifyActor={}, so TNG will not change "
+                             "this actor's addon", canModify);
+            } else {
+                // Two entries means TNG returned its pseudo-options and nothing else.
+                // Worth distinguishing from an empty array, which would instead mean
+                // the string-array read came back with nothing at all.
+                spdlog::info("Body menu: no TNG row - CanModifyActor={} but TNG listed {} "
+                             "entries, so no addon fits this actor's race group and sex",
+                             canModify, m_tngEntries.size());
+            }
+
+            // Out here rather than in the VM callback that produced it: building a row
+            // is a 3DUI call, and 3DUI is main-thread only.
+            PopulateAddonRow();
+            UpdateAddonText();
+            return;
+        }
+
+        const auto waited =
+            std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - m_tngPrimedAt);
+        if (waited.count() >= Config::options.tngPrimeTimeoutMs) {
+            // There is no timeout on a Papyrus call itself - a VM that never answers
+            // simply never answers - so the deadline has to live here. Giving up leaves
+            // the row hidden, which is the same as TNG having nothing to offer.
+            m_tngResolved = true;
+            spdlog::warn("Body menu: TNG did not answer within {}ms, addon row stays hidden",
+                         Config::options.tngPrimeTimeoutMs);
+        }
+    }
+
+    std::wstring BodyMenuManager::AddonTooltip() const {
+        if (!HasAddonRow()) return L"No addons";
+
+        return Tng::EntryLabel(m_tngEntries, m_tngIndex) + L" (" +
+               std::to_wstring(m_tngIndex + 1) + L"/" + std::to_wstring(m_tngEntries.size()) +
+               L") - tap to reset";
+    }
+
+    void BodyMenuManager::UpdateAddonText() {
+        if (!m_addonText) return;
+
+        if (!HasAddonRow()) {
+            m_addonText->SetVisible(false);
+            return;
+        }
+
+        m_addonText->SetText(Tng::EntryLabel(m_tngEntries, m_tngIndex).c_str());
+        m_addonText->SetVisible(true);
+
+        // The position in the list belongs on the icon, where the hand already is.
+        if (m_addonIcon) m_addonIcon->SetTooltip(AddonTooltip().c_str());
+    }
+
+    void BodyMenuManager::StepAddon(int delta) {
+        if (!HasAddonRow()) return;
+
+        const int count = static_cast<int>(m_tngEntries.size());
+        // Wraps, so a held chevron walks the whole list without dead-ending.
+        m_tngIndex = (m_tngIndex + delta + count) % count;
+
+        // Deferred like the weight commit: every set swaps the actor's skin, so
+        // stepping through a long list must cost one swap rather than one per step.
+        m_tngPending = true;
+        m_tngRequestedAt = Clock::now();
+
+        const bool hadChanges = EditSession::GetSingleton()->HasChanges();
+        EditSession::GetSingleton()->NoteChange("tng");
+        if (!hadChanges) m_toolRowDirty = true;
+
+        UpdateAddonText();
+    }
+
+    void BodyMenuManager::ResetAddon() {
+        if (!HasAddonRow()) return;
+        if (m_tngIndex == 0) return;  // already on Default
+
+        m_tngIndex = 0;
+        m_tngPending = true;
+        m_tngRequestedAt = Clock::now();
+
+        const bool hadChanges = EditSession::GetSingleton()->HasChanges();
+        EditSession::GetSingleton()->NoteChange("tng");
+        if (!hadChanges) m_toolRowDirty = true;
+
+        UpdateAddonText();
+    }
+
+    void BodyMenuManager::CommitAddon() {
+        m_tngPending = false;
+
+        auto* actor = GetTargetActor();
+        if (!actor || !HasAddonRow()) return;
+
+        // TNG's list leads with two pseudo-entries, so index 2 is its addon 0.
+        int choice = m_tngIndex - 2;
+
+        // TNG keeps the player's default apart from everyone else's and has its own
+        // sentinel for it. The body menu only ever opens on a grabbed NPC today, so
+        // this is defensive rather than reachable - but the two are not interchangeable
+        // and picking the wrong one here would be silent.
+        if (choice == -2 && actor->IsPlayerRef()) choice = -3;
+
+        spdlog::info("Body menu: applying TNG addon '{}' (choice {}) to '{}'",
+                     m_tngEntries[static_cast<size_t>(m_tngIndex)], choice, actor->GetName());
+
+        Tng::SetAddon(actor, choice);
+    }
+
     // ===== Tools =====
 
     void BodyMenuManager::UndoChanges() {
         // The session owns the snapshot, so this reverts the overlay side too - the two
         // editors are one sitting as far as the player is concerned.
         EditSession::GetSingleton()->Undo();
+
+        // The addon is not in the session snapshot: EditSession::Begin is synchronous
+        // and TNG's state is not, so making it wait for a VM answer would hold up every
+        // menu open for a mod most actors do not even use. Reverting it here keeps the
+        // button honest about covering everything since the NPC was opened.
+        if (HasAddonRow() && m_tngIndex != m_tngInitialIndex) {
+            m_tngIndex = m_tngInitialIndex;
+            CommitAddon();
+        }
 
         SyncWeightStep();
         RefreshAll();
@@ -583,7 +856,8 @@ namespace NPCEditor {
         const std::string id(event->sourceID);
 
         const bool isStepper = id == kPresetPrevId || id == kPresetNextId ||
-                               id == kWeightPrevId || id == kWeightNextId;
+                               id == kWeightPrevId || id == kWeightNextId ||
+                               id == kAddonPrevId  || id == kAddonNextId;
 
         switch (event->type) {
             case P3DUI::EventType::ActivateDown: {
@@ -596,10 +870,18 @@ namespace NPCEditor {
                     else if (id == kPresetNextId) StepPreset(1);
                     else if (id == kWeightPrevId) StepWeight(-1);
                     else if (id == kWeightNextId) StepWeight(1);
+                    else if (id == kAddonPrevId)  StepAddon(-1);
+                    else if (id == kAddonNextId)  StepAddon(1);
                     return true;
                 }
                 if (id == kWeightIconId) {
                     StepWeight(1);
+                    return true;
+                }
+                // Safe to run inline, unlike the tool buttons: it moves an index and
+                // rewrites a label and a tooltip, and destroys nothing 3DUI is walking.
+                if (id == kAddonIconId) {
+                    ResetAddon();
                     return true;
                 }
                 return false;
@@ -610,9 +892,12 @@ namespace NPCEditor {
                     EndRepeat();
                     return true;
                 }
-                if (id == kWeightIconId || id == kPresetIconId) return true;
+                if (id == kWeightIconId || id == kPresetIconId || id == kAddonIconId) return true;
 
-                if (id == kAnchorId) {
+                // Same as the orb, and safe to do inline for the same reason: closing
+                // tears the menu down wholesale rather than rebuilding a row underneath
+                // the walk that is still in progress.
+                if (id == kAnchorId || id == kDoneId) {
                     MenuRouter::GetSingleton()->CloseAll();
                     return true;
                 }
@@ -638,7 +923,8 @@ namespace NPCEditor {
 
             case P3DUI::EventType::HoverEnter:
                 return isStepper || id == kPresetIconId || id == kWeightIconId ||
-                       id == kAnchorId || id == kUndoId;
+                       id == kAddonIconId || id == kAnchorId || id == kUndoId ||
+                       id == kDoneId;
 
             default:
                 return false;

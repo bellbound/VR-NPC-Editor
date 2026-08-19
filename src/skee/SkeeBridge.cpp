@@ -4,7 +4,9 @@
 
 #include <Windows.h>
 #include <cctype>
+#include <chrono>
 #include <filesystem>
+#include <unordered_map>
 #include <spdlog/spdlog.h>
 
 namespace Skee {
@@ -26,7 +28,10 @@ namespace Skee {
         // What RaceMenu parks an unused overlay node on, from [Overlays/Data]
         // sDefaultTexture. Read rather than assumed: it is a user-editable setting, and
         // painting the wrong path over a node would leave the slot looking occupied.
-        std::string g_defaultTexture = "textures\actors\character\overlays\default.dds";
+        std::string g_defaultTexture = "textures\\actors\\character\\overlays\\default.dds";
+
+        // When AddOverlays was last asked for, per actor. See EnsureOverlays.
+        std::unordered_map<RE::FormID, std::chrono::steady_clock::time_point> g_overlayRequests;
 
         struct SlotCounts {
             uint32_t body = 6;   // skeevr.ini defaults; VR ships 6 where SE ships 8
@@ -182,12 +187,36 @@ namespace Skee {
         return std::format("{} [Ovl{}]", NodePrefix(loc), index);
     }
 
+    // AddOverlays is idempotent in its bookkeeping but emphatically not in its effect:
+    // RaceMenu answers it by uninstalling and reinstalling every overlay node on the
+    // actor. Registered overrides are re-applied to the new geometry, but anything only
+    // painted on - every preview - dies with the node it was painted on. Calling this
+    // before each preview is what made previews vanish the frame after they were set.
+    //
+    // So it is asked for once and then left alone: if the geometry is there, there is
+    // nothing to do, and if it is not, a request already in flight is given time to
+    // land. The grace period expiring is what lets an actor whose 3D was rebuilt (a cell
+    // change, a re-equip) be fitted out again without anything having to notice.
     bool EnsureOverlays(RE::Actor* actor) {
         if (!g_available || !actor) return false;
 
-        // AddOverlays is idempotent, and asking HasOverlays would cost an async round
-        // trip for information we would only use to skip an idempotent call.
+        if (HasOverlayNodes(actor, Location::Body)) return true;
+
+        constexpr auto kRebuildGrace = std::chrono::seconds(5);
+        const auto now = std::chrono::steady_clock::now();
+
+        auto& requested = g_overlayRequests[actor->GetFormID()];
+        if (requested.time_since_epoch().count() != 0 && now - requested < kRebuildGrace) return true;
+        requested = now;
+
+        spdlog::debug("NiOverride: asking for overlay nodes on {:08X}", actor->GetFormID());
         return CallGlobal("AddOverlays", RE::MakeFunctionArguments(static_cast<RE::TESObjectREFR*>(actor)));
+    }
+
+    // Slot 0 stands for the set: RaceMenu builds every overlay of a kind in one pass, so
+    // either they are all attached or none of them are.
+    bool HasOverlayNodes(RE::Actor* actor, Location loc) {
+        return GetSlotCount(loc) > 0 && FindOverlayGeometry(actor, GetNodeName(loc, 0)) != nullptr;
     }
 
     std::optional<std::string> GetSlotTexture(RE::Actor* actor, const std::string& node) {
@@ -235,6 +264,15 @@ namespace Skee {
     }
 
     namespace {
+        // NiOverride discards a write whose node it cannot find and says nothing about
+        // it. That silence cost a long hunt once already, so it is logged here.
+        void WarnIfNodeMissing(RE::Actor* actor, const std::string& node, const char* what) {
+            if (FindOverlayGeometry(actor, node)) return;
+            spdlog::warn("NiOverride: {} on {:08X} targets \"{}\", which is not on the actor - "
+                         "RaceMenu will drop it",
+                         what, actor ? actor->GetFormID() : 0, node);
+        }
+
         void WriteAppearance(RE::Actor* actor, bool isFemale, const std::string& node,
                              const Appearance& look, bool persist) {
             auto* refr = static_cast<RE::TESObjectREFR*>(actor);
@@ -276,6 +314,7 @@ namespace Skee {
 
         spdlog::debug("NiOverride: apply {:08X} female={} node=\"{}\" texture=\"{}\"",
                       actor->GetFormID(), isFemale, node, look.texture);
+        WarnIfNodeMissing(actor, node, "apply");
 
         WriteAppearance(actor, isFemale, node, look, true);
         Flush(actor);
@@ -287,8 +326,12 @@ namespace Skee {
 
         spdlog::debug("NiOverride: preview {:08X} node=\"{}\" texture=\"{}\"",
                       actor->GetFormID(), node, look.texture);
+        WarnIfNodeMissing(actor, node, "preview");
 
-        // persist=false keeps this out of RaceMenu's co-save and off any re-equip.
+        // persist=false keeps this out of RaceMenu's co-save and off any re-equip. It
+        // also makes the write a one-shot: NiOverride paints it on the spot and keeps no
+        // record, so unlike a persistent override there is no second chance for it to
+        // land once the geometry shows up. The caller must not get here before it has.
         WriteAppearance(actor, isFemale, node, look, false);
         Flush(actor);
         return true;

@@ -19,6 +19,11 @@ namespace NPCEditor::Overlay {
     namespace {
         constexpr const char* kModId = "VRNPCEditor";
 
+        // How long a preview will wait for RaceMenu to build the actor's overlay
+        // geometry before giving up on it. The build normally lands within a frame or
+        // two; this is only here so a refusal reads as one.
+        constexpr auto kNodeWait = std::chrono::seconds(3);
+
         constexpr const char* kRootId        = "vrnpce_root";
         constexpr const char* kAppliedRowId  = "vrnpce_appliedrow";
         constexpr const char* kAppliedTextId = "vrnpce_appliedtext";
@@ -74,10 +79,11 @@ namespace NPCEditor::Overlay {
         constexpr float kPackScale = 1.02f;
 
         // A row and the line written under it are one thing, so they sit closer together
-        // than one group sits to the next - the body menu's spacing, so moving between
-        // the two editors does not reshuffle the menu.
-        constexpr float kTextGap  = 4.2f;
-        constexpr float kGroupGap = 8.75f;
+        // than one group sits to the next. Both gaps are 0.8 of what they were: with the
+        // applied row, the stepper, the source row and the tools all stacked up, the menu
+        // was taller than a glance covers, and the labels never needed that much air.
+        constexpr float kTextGap  = 3.36f;
+        constexpr float kGroupGap = 7.0f;
 
         // Bottom to top: the tool row, and above it three rows that each carry a line of
         // text kTextGap underneath - the pack filter (or the palette, same line) over the
@@ -320,7 +326,14 @@ namespace NPCEditor::Overlay {
         m_targetPlayer = false;
         m_selectedOverlay.clear();
         m_pickIndex = static_cast<size_t>(-1);
+        m_awaitingNodes = false;
         m_open = true;
+
+        // Asked for here rather than at the first preview. An NPC has no overlay geometry
+        // until RaceMenu builds it, the build goes on the task queue, and anything written
+        // before it lands is discarded - so the request goes in while the player is still
+        // reading the menu, and the geometry is usually there by the first chevron.
+        Skee::EnsureOverlays(actor);
 
         spdlog::info("Menu: opening for {:08X} ({})", actor->GetFormID(), actor->GetName());
 
@@ -367,6 +380,7 @@ namespace NPCEditor::Overlay {
         // bargain the check button makes.
         DropPreviewSlot();
         EndRepeat();
+        m_awaitingNodes = false;
         m_open = false;
 
         FrameHook::GetSingleton()->Unregister(this);
@@ -684,6 +698,20 @@ namespace NPCEditor::Overlay {
 
         Skee::EnsureOverlays(actor);
 
+        // RaceMenu schedules the overlay build; it is not done when AddOverlays returns.
+        // A preview written before the geometry exists is dropped without a word, and
+        // that is exactly what "the chevrons only change the text" was: the write went
+        // nowhere. Park the request and let Tick take it up once the nodes arrive.
+        if (!Skee::HasOverlayNodes(actor, entry->location)) {
+            if (!m_awaitingNodes) {
+                m_awaitingNodes = true;
+                m_awaitingSince = Clock::now();
+                ShowInfo(L"Preparing overlays...");
+            }
+            return;
+        }
+        m_awaitingNodes = false;
+
         // Tinted with the selected swatch, so what you are looking at is what the check
         // button will commit.
         const auto appearance = TintedAppearance(*entry);
@@ -713,7 +741,7 @@ namespace NPCEditor::Overlay {
 
             auto found = Skee::FindFreeSlot(actor, entry->location);
             if (!found) {
-                ShowInfo(L"Every overlay slot is full - empty them with the bin");
+                ShowInfo(L"Every overlay slot is full - take one off first");
                 return;
             }
             node = std::move(*found);
@@ -724,6 +752,33 @@ namespace NPCEditor::Overlay {
             m_previewNode = std::move(node);
             m_previewLocation = entry->location;
             ClearInfo();
+        }
+    }
+
+    // RaceMenu never says when an overlay build has finished, so the only way to know is
+    // to look. One named lookup a frame, and only while a preview is waiting on it.
+    void MenuManager::RetryPendingPreview() {
+        const auto* entry = CurrentPick();
+        auto* actor = GetTargetActor();
+        if (!entry || !actor) {
+            m_awaitingNodes = false;
+            return;
+        }
+
+        if (Skee::HasOverlayNodes(actor, entry->location)) {
+            m_awaitingNodes = false;
+            PreviewCurrent();
+            return;
+        }
+
+        // A build this late is not coming - bPlayerOnly, an actor with no body addon, a
+        // RaceMenu that refused. Better to say so than to sit on "Preparing overlays..."
+        // for the rest of the sitting.
+        if (Clock::now() - m_awaitingSince >= kNodeWait) {
+            m_awaitingNodes = false;
+            spdlog::warn("Menu: RaceMenu has not built the {} overlay nodes on {:08X}",
+                         Skee::LocationName(entry->location), actor->GetFormID());
+            ShowInfo(L"RaceMenu could not add overlays to this NPC");
         }
     }
 
@@ -768,7 +823,7 @@ namespace NPCEditor::Overlay {
 
         const auto appearance = TintedAppearance(*entry);
         if (!state->Apply(actor, *entry, &appearance, previewed)) {
-            ShowInfo(L"Every overlay slot is full - empty them with the bin");
+            ShowInfo(L"Every overlay slot is full - take one off first");
             return;
         }
 
@@ -1043,12 +1098,16 @@ namespace NPCEditor::Overlay {
         for (size_t i = 0; i < split; ++i) addButton(buttons[i]);
 
         // Immediately left of the orb, and unconditional in both target modes rather
-        // than gated on us having applied something. The player in particular arrives
-        // with every hand and face slot already taken by chargen or another overlay mod,
-        // and none of those are ours to list - so if the button only showed up for
-        // overlays this menu applied, it would be missing exactly when it is the only
-        // thing that can free a slot.
-        addButton({kClearId, kTexClear, L"Take every overlay off"});
+        // than gated on us having something on: the applied row is only ever as complete
+        // as the last sync, so "nothing to take off" is something the button says rather
+        // than a reason for it to go missing.
+        //
+        // It takes off what this menu recognises and nothing else. The player in
+        // particular arrives from chargen - or from another overlay mod - with hand and
+        // face slots already full of textures no installed pack declares, and those are
+        // not ours to wipe: emptying someone else's tattoos to free a slot is not a
+        // trade this button gets to make on the player's behalf.
+        addButton({kClearId, kTexClear, L"Take our overlays off"});
 
         // The same orb the body menu uses: grip drags the menu, trigger closes it.
         auto orbConfig = P3DUI::ElementConfig::Default(kAnchorId);
@@ -1068,9 +1127,9 @@ namespace NPCEditor::Overlay {
 
         DropPreviewSlot();
 
-        const size_t cleared = StateManager::GetSingleton()->ClearEverySlot(actor);
+        const size_t cleared = StateManager::GetSingleton()->ClearAll(actor);
         if (cleared == 0) {
-            ShowInfo(L"There is nothing to take off");
+            ShowInfo(L"There is nothing of ours to take off");
             return;
         }
 
@@ -1173,7 +1232,11 @@ namespace NPCEditor::Overlay {
     // ===== Frame tick =====
 
     void MenuManager::Tick() {
-        if (!m_open || m_repeatId.empty()) return;
+        if (!m_open) return;
+
+        if (m_awaitingNodes) RetryPendingPreview();
+
+        if (m_repeatId.empty()) return;
 
         const auto now = Clock::now();
         const auto sincePress = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_repeatSince);

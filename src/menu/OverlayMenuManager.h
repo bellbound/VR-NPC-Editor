@@ -115,6 +115,10 @@ namespace NPCEditor::Overlay {
 
         void PreviewCurrent();
 
+        // Runs from Tick while a preview is waiting on RaceMenu to build the actor's
+        // overlay geometry, and puts the preview on as soon as it has.
+        void RetryPendingPreview();
+
         // EndPreview takes the preview off the actor and keeps the slot it was using;
         // DropPreviewSlot does that and gives the slot back too. See their definitions
         // for why holding on to a slot between steps matters.
@@ -208,6 +212,11 @@ namespace NPCEditor::Overlay {
         std::string m_previewId;
         std::string m_previewNode;
         Skee::Location m_previewLocation = Skee::Location::Body;
+
+        // A preview asked for before the actor had overlay geometry, and when it was
+        // asked for. Tick retries it until the geometry lands or the wait runs out.
+        bool m_awaitingNodes = false;
+        Clock::time_point m_awaitingSince{};
 
         // The held chevron, if any, and when it was pressed. Repeat starts after the
         // configured delay and then fires on an interval, both driven from Tick.
