@@ -23,8 +23,11 @@ namespace NPCEditor::Overlay {
     //
     // Browsing is non-destructive: stepping writes the overlay to the actor through
     // NiOverride's non-persistent path, so you see it on the body, and only the check
-    // button commits it. Anything left uncommitted is taken back off when the menu
-    // closes.
+    // button commits it - or leaving does it for you. Walking away from an overlay you
+    // stopped on - switching source, switching who you are editing, or closing the menu -
+    // keeps it: the check button is the shortcut, not the toll. Only an overlay you
+    // deliberately stepped or picked is a preview, so the pack the menu happened to open
+    // on never commits itself.
     class MenuManager {
     public:
         static MenuManager* GetSingleton();
@@ -112,6 +115,14 @@ namespace NPCEditor::Overlay {
 
         void CommitPick();
         void RemovePick();
+
+        // Commits the live preview, if there is one, on the way out of the state that
+        // was showing it - a source switch, a target switch, or the menu closing. There
+        // is no preview until the player steps or picks, which is what keeps a menu they
+        // only opened and closed again from putting the default pack's first overlay on
+        // the actor. Every caller runs it before the thing it is leaving has changed,
+        // since it commits to whatever the pick list and the target say at the time.
+        void KeepPreview();
 
         void PreviewCurrent();
 
@@ -209,6 +220,9 @@ namespace NPCEditor::Overlay {
         // written into, and what kind of slot that is. Cleared on commit and on menu
         // close. Stepping to another overlay of the same kind writes straight over the
         // slot rather than releasing it, so the location is kept to know when it can.
+        //
+        // An empty id is also how the menu tells "the player has chosen nothing yet"
+        // from "the player is looking at their choice" - see KeepPreview.
         std::string m_previewId;
         std::string m_previewNode;
         Skee::Location m_previewLocation = Skee::Location::Body;

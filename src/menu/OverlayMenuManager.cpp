@@ -376,8 +376,11 @@ namespace NPCEditor::Overlay {
     void MenuManager::Close() {
         if (!m_open) return;
 
-        // Anything browsed but never committed comes back off here - that is the whole
-        // bargain the check button makes.
+        // Closing on an overlay keeps it. It runs before the teardown below so the rows
+        // it repaints are still standing, and the DropPreviewSlot after it is the
+        // backstop for the cases KeepPreview leaves a preview in place - it has already
+        // given the slot up on every path that committed.
+        KeepPreview();
         DropPreviewSlot();
         EndRepeat();
         m_awaitingNodes = false;
@@ -838,6 +841,33 @@ namespace NPCEditor::Overlay {
         UpdatePickIcon();
     }
 
+    // What leaving does with the overlay you are looking at. Taking it back off was the
+    // old bargain, and in practice it read as the menu undoing the player's work: you
+    // step onto one you like, reach for another pack to compare, and it comes off. The
+    // check button is still there for committing without moving, but walking away is now
+    // a way of saying yes rather than no.
+    //
+    // Nothing is previewed until the player steps, rolls or picks off the applied row,
+    // so an empty id means they have chosen nothing and there is nothing to keep - which
+    // is what stops a menu that was only opened and closed again from stamping the
+    // default pack's first overlay onto the actor.
+    void MenuManager::KeepPreview() {
+        if (m_previewId.empty()) return;
+
+        // CommitPick writes whatever the stepper is sitting on. In every path that
+        // reaches here that is the previewed overlay, but the two disagreeing would mean
+        // committing something the player never saw, so that one goes back off instead.
+        const auto* entry = CurrentPick();
+        if (!entry || entry->qualifiedId != m_previewId) {
+            spdlog::warn("Menu: preview \"{}\" is not what the stepper is on, dropping it", m_previewId);
+            DropPreviewSlot();
+            return;
+        }
+
+        spdlog::debug("Menu: keeping previewed overlay \"{}\"", m_previewId);
+        CommitPick();
+    }
+
     void MenuManager::RemovePick() {
         const auto* entry = CurrentPick();
         auto* actor = GetTargetActor();
@@ -914,10 +944,9 @@ namespace NPCEditor::Overlay {
         const auto& packs = Catalog::GetSingleton()->GetPacks();
         if (index >= packs.size()) return;
 
-        EndPreview();
-
         // Clicking the selected pack again returns to the default rather than emptying
-        // the stepper - an empty stepper reads as a broken menu.
+        // the stepper - an empty stepper reads as a broken menu. Decided before anything
+        // else so a press that moves nothing stays a no-op rather than committing.
         if (index == m_selectedPack) {
             const auto previous = m_selectedPack;
             SelectDefaultPack();
@@ -925,6 +954,12 @@ namespace NPCEditor::Overlay {
         } else {
             m_selectedPack = index;
         }
+
+        // The stepper is about to walk away from whatever is on show, so it is kept:
+        // reaching for another source to see what else there is should not undo the one
+        // you already stopped on. Reads the pick list of the pack we are leaving, which
+        // RebuildPickList below has not replaced yet.
+        KeepPreview();
 
         spdlog::debug("Menu: pack filter -> \"{}\"", packs[m_selectedPack].modId);
 
@@ -1157,6 +1192,11 @@ namespace NPCEditor::Overlay {
         }
 
         if (id == kTargetId) {
+            // Before the flip: the commit resolves the target itself, and after it that
+            // would be the wrong body. Same bargain as a source switch - the overlay you
+            // stopped on stays on whoever you were looking at while you go and look at
+            // the other one.
+            KeepPreview();
             DropPreviewSlot();
             m_selectedOverlay.clear();
             m_pickIndex = static_cast<size_t>(-1);
