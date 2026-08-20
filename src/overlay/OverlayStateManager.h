@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -16,13 +17,23 @@ namespace NPCEditor::Overlay {
         struct Applied {
             std::string qualifiedId;
             std::string node;      // the SKEE overlay node it occupies, e.g. "Body [Ovl2]"
+
+            // What was actually written into that slot, tint and all, so it can be
+            // written again identically - into the ODF rule file that survives the
+            // restart, and back onto the actor when a cleared overlay is restored.
+            //
+            // Empty means "we did not put this here": an overlay ODF distributed at
+            // spawn, one another mod applied, or one read from a co-save written before
+            // this was recorded. For those the pack's own declaration is the only honest
+            // answer, and LookFor falls back to it.
+            std::optional<Skee::Appearance> appearance;
         };
 
         struct ActorState {
             std::string editorId;
             bool isFemale = false;
             std::vector<Applied> applied;
-            std::vector<std::string> lastCleared;  // what "restore all" puts back
+            std::vector<Applied> lastCleared;  // what "restore all" puts back
         };
 
         // Reads the actor's live overlay slots and reconciles them with our record, so
@@ -64,7 +75,10 @@ namespace NPCEditor::Overlay {
         const std::unordered_map<std::string, ActorState>& GetAll() const { return m_actors; }
 
         void Save(SKSE::SerializationInterface* serialization);
-        void Load(SKSE::SerializationInterface* serialization);
+
+        // `version` is the record version SKSE read back, so a co-save written before
+        // the tint was recorded can still be loaded - see kRecordVersion.
+        void Load(SKSE::SerializationInterface* serialization, uint32_t version);
         void Revert();
 
     private:
@@ -72,4 +86,22 @@ namespace NPCEditor::Overlay {
 
         std::unordered_map<std::string, ActorState> m_actors;  // keyed by FormKeyUtil key
     };
+
+    // The look to write for a tracked overlay: the tint we recorded, over the texture
+    // the catalog holds now. The catalog is the authority on the path - a pack that has
+    // been updated since the choice was made may well have moved it - so the recorded
+    // one is deliberately not trusted for that.
+    //
+    // Both places that write an overlay a second time go through here: the ODF rule file
+    // and RestoreAll. Before this existed they both re-derived the look from the catalog
+    // entry, which meant every restart and every restore repainted the overlay in the
+    // pack's own colour instead of the chosen one - and the packs almost all declare
+    // black.
+    inline Skee::Appearance LookFor(const Entry& entry, const std::optional<Skee::Appearance>& recorded) {
+        if (!recorded) return entry.appearance;
+
+        Skee::Appearance look = *recorded;
+        look.texture = entry.appearance.texture;
+        return look;
+    }
 }

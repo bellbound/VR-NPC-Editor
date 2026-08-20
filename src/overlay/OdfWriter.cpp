@@ -54,13 +54,20 @@ namespace NPCEditor::Overlay::OdfWriter {
 
                 if (const auto* entry = catalog->FindEntry(applied.qualifiedId)) {
                     appliedEntries.push_back(entry);
-                    if (entry->appearance.color) overlay["color"] = FormatColor(*entry->appearance.color);
-                    if (entry->appearance.alpha) overlay["alpha"] = *entry->appearance.alpha;
-                    if (entry->appearance.glowColor) {
+
+                    // The look that was actually written, not the pack's declaration.
+                    // ODF re-applies this at the next game start and it is the only
+                    // record of the choice that outlives the session, so a rule built
+                    // from the entry alone hands the player back the pack's own colour -
+                    // which across the installed packs is almost always black.
+                    const auto look = LookFor(*entry, applied.appearance);
+                    if (look.color) overlay["color"] = FormatColor(*look.color);
+                    if (look.alpha) overlay["alpha"] = *look.alpha;
+                    if (look.glowColor) {
                         overlay["glow"] = true;
-                        overlay["glowColor"] = FormatColor(*entry->appearance.glowColor);
+                        overlay["glowColor"] = FormatColor(*look.glowColor);
                     }
-                    if (entry->appearance.glowIntensity) overlay["glowIntensity"] = *entry->appearance.glowIntensity;
+                    if (look.glowIntensity) overlay["glowIntensity"] = *look.glowIntensity;
                 }
                 overlays.push_back(std::move(overlay));
             }

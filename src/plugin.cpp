@@ -60,7 +60,7 @@ namespace {
         while (serialization->GetNextRecordInfo(type, version, length)) {
             switch (type) {
                 case kActorRecord:
-                    NPCEditor::Overlay::StateManager::GetSingleton()->Load(serialization);
+                    NPCEditor::Overlay::StateManager::GetSingleton()->Load(serialization, version);
                     break;
                 default:
                     // Skipping rather than aborting keeps an older or newer co-save from
