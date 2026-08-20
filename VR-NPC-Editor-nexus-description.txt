@@ -1,0 +1,157 @@
+[center][color=#ffd966][b][size=5]INTRODUCTION[/size][/b][/color][/center]
+[quote][b]Reach out, take hold of anyone in Skyrim and change how they look. VR NPC Editor puts tattoos, bodypaints, freckles, body hair and scars on an NPC with your hands, and lets you pick their body shape and weight while you are standing in front of them.
+
+What you choose stays on them - through saves, and through restarts.[/b][/quote]
+
+
+[center][color=#ffd966][size=5][b]KEY FEATURES[/b][/size][/color][/center]
+
+[color=#ffe599][size=4][b]◈ Grab Someone And Edit Them[/b][/size][/color]
+[size=4]Hold an NPC with one hand and pull the trigger on the other. Two icons appear - a palette for their skin and a figure for their body - and you pick one. No menus, no console, no chargen.[/size]
+
+[color=#ffe599][size=4][b]◈ Every Overlay You Have Installed[/b][/size][/color]
+[size=4]The menu reads your Overlay Distribution Framework packs and browses them one at a time. Step through with the arrows, or press the dice to land somewhere at random.[/size]
+
+[color=#ffe599][size=4][b]◈ Try Before You Keep[/b][/size][/color]
+[size=4]Whatever the stepper is showing is already on the body in front of you, so you choose by looking rather than by reading a name. Step to the next one and it replaces it.[/size]
+
+[color=#ffe599][size=4][b]◈ Your SlaveTats Packs Work Here Too[/b][/size][/color]
+[size=4]Any SlaveTats texture pack you have installed shows up as pack icons alongside the ODF ones, one per section. SlaveTats itself is not needed - only its packs.[/size]
+
+[color=#ffe599][size=4][b]◈ Pick The Colour[/b][/size][/color]
+[size=4]Twenty colours, each at full and at three-quarter strength, plus four skin tones. A swatch repaints what you last put on, so you can settle the colour after you have settled the tattoo.[/size]
+
+[color=#ffe599][size=4][b]◈ See What They Are Already Wearing[/b][/size][/color]
+[size=4]The top row shows everything on them, including overlays other mods distributed. Tap one to jump the stepper to it, and press the dice to take it off.[/size]
+
+[color=#ffe599][size=4][b]◈ Change Their Body[/b][/size][/color]
+[size=4]The body editor steps through every BodySlide preset that fits them, applying each one as you go. Weight is a five-step dial next to it.[/size]
+
+[color=#ffe599][size=4][b]◈ Undress To See Your Work[/b][/size][/color]
+[size=4]One button takes their clothes off so you can see what you are doing, and puts them back when you close the menu - whether or not you remember to.[/size]
+
+[color=#ffe599][size=4][b]◈ Undo The Whole Sitting[/b][/size][/color]
+[size=4]One press puts their overlays, preset and weight back exactly as you found them. It reaches back to the moment you opened them, across both editors.[/size]
+
+[color=#ffe599][size=4][b]◈ Edit Yourself[/b][/size][/color]
+[size=4]Flip the target button and the same menu acts on you instead, without letting go of the NPC.[/size]
+
+[color=#ffe599][size=4][b]◈ Put The Menu Where You Want It[/b][/size][/color]
+[size=4]Grab the glowing orb to move the menu anywhere around you, or pull the trigger on it to close.[/size]
+
+[color=#ffe599][size=4][b]◈ It Is Still There Tomorrow[/b][/size][/color]
+[size=4]Everything you apply is written out as an Overlay Distribution Framework rule, so the NPC is still wearing it after a restart - and on any save where you meet them.[/size]
+
+[color=#ffe599][size=4][b]◈ The New Gentleman[/b][/size][/color]
+[size=4]If TNG is installed, the body editor grows a third stepper for the addons it offers that actor.[/size]
+
+
+[center][color=#ffd966][size=5][b]REQUIREMENTS[/b][/size][/color][/center]
+[center][b][size=4][url=https://www.nexusmods.com/skyrimspecialedition/mods/169497]3DUI[/url][/size][/b][/center]
+[center][b][size=4][url=https://www.nexusmods.com/skyrimspecialedition/mods/27782]Skyrim VR Tools[/url][/size][/b][/center]
+[center][b][size=4][url=https://www.nexusmods.com/skyrimspecialedition/mods/43930]HIGGS[/url][/size][/b][/center]
+[center][size=4][i]the menu is opened by grabbing an NPC, so it cannot be reached without it.[/i][/size][/center]
+[center][b][size=4][url=https://www.nexusmods.com/skyrimspecialedition/mods/58101]Address Library for Skyrim VR[/url][/size][/b][/center]
+[center][/center]
+[center][b][size=4][url=https://www.nexusmods.com/skyrimspecialedition/mods/156898]RacemenuVR[/url] & [url=https://www.nexusmods.com/skyrimspecialedition/mods/155120]Overlay Distribution Framework[/url][/size][/b][/center]
+[center][size=4][i]not required, but the overlay editor needs both - one puts overlays on, the other keeps them there. Plus any ODF overlay packs you want to browse.[/i][/size][/center]
+[center][b][size=4][url=https://www.nexusmods.com/skyrimspecialedition/mods/77016]OBody NG[/url][/size][/b][/center]
+[center][size=4][i]not required, but the body editor needs it for presets and weight.[/i][/size][/center]
+[center][b][size=4][url=https://www.nexusmods.com/skyrimspecialedition/mods/104215]The New Gentleman[/url][/size][/b][/center]
+[center][size=4][i]not required, adds the addon stepper to the body editor when it is installed.[/i][/size][/center]
+[center][/center]
+[center][b][size=4][url=https://www.nexusmods.com/skyrimspecialedition/mods/59818]A crashlogger[/url][/size][/b][/center]
+[center][size=4][i]not required, but you should have one anyway.[/i][/size][/center]
+
+[color=#ffe599][size=4][b]Safety & Compatibility[/b][/size][/color]
+[size=4]This is an SKSE mod with no plugin and no Papyrus scripts of its own, so it can be installed or uninstalled at any point in a playthrough. Whatever it hides when something is missing, it hides quietly - install RaceMenu or OBody later and the matching editor simply appears.
+
+There are no known incompatibilities - please let me know if you find one.[/size]
+
+
+[center][color=#ffd966][size=5][b]BETA[/b][/size][/color][/center]
+
+[center][size=4]This mod is still in Beta until I have gathered some more user feedback. If you run into anything, please tell me.[/size][/center]
+[center][/center]
+
+[center][color=#ffd966][size=5][b]TECHNICAL INFORMATION[/b][/size][/color][/center]
+
+[color=#ffe599][size=4][b]How it Works[/b][/size][/color]
+[spoiler][size=4]Overlays are written into RaceMenu's overlay slots, which is the same place every other overlay mod puts them. That alone lasts until you quit, so anything you keep is also mirrored into a single rule file under [i]Data\SKSE\Plugins\ODF_distribution_rules[/i], which Overlay Distribution Framework reads at game start and applies again. The file belongs to this mod and is rewritten whole; no other mod's rules are read or touched.
+
+Presets and weight are handed straight to OBody NG, and addons to The New Gentleman.
+
+Only the overlays you actually put on someone are ever declared to ODF. Your installed packs are not announced to it wholesale, so nothing you own quietly joins the pools other mods' distribution rules draw from.[/size][/spoiler]
+
+[color=#ffe599][size=4][b]Limitations[/b][/size][/color]
+[spoiler][size=4]The overlay editor only offers itself on unique, named NPCs. Generic actors - bandits, guards, citizens - share one base record between all of them, and an overlay saved against that record would appear on every one of them.
+
+An actor has a fixed number of overlay slots, set by RaceMenu in [i]skeevr.ini[/i] - six per body part by default. When they are full the menu says so and you take one off to make room. Raising [i]iNumOverlays[/i] in that file gives you more.
+
+Take our overlays off only removes what this menu recognises. Tattoos the player brought from chargen, or from another overlay mod, are left alone.
+
+Weight is stored on the base record, so that stepper also only appears on unique NPCs.[/size][/spoiler]
+
+[color=#ffe599][size=4][b]Mod Settings[/b][/size][/color]
+[spoiler][size=4]There is no MCM. Everything lives in [i]Data\SKSE\Plugins\VRNPCEditor.ini[/i], which is written with its defaults and a comment for every key the first time you run the game. Delete it to get a fresh one.
+
+[b]fElementScale[/b] - size of the overlay swatches, if the icons are too small or too large for your headset.
+[b]sDefaultPack[/b] - the pack the menu opens on. Empty picks the first one alphabetically.
+[b]bImportSlaveTats[/b] - read your SlaveTats packs as well as your ODF ones.
+[b]bPreloadCatalog[/b] - read the installed packs shortly after a save loads, so the first menu open has them ready instead of showing "Loading overlays...".
+
+[b]bEnableBodyMenu[/b] - hide the body editor entirely, even with OBody installed.
+[b]bEnableWeightButton[/b] - hide the weight stepper.
+[b]bEnableTngAddon[/b] - hide the TNG addon stepper.
+[b]iPresetRepeatDelayMs[/b] and [b]iPresetRepeatIntervalMs[/b] - how long an arrow has to be held before it starts stepping on its own, and how fast it steps after that.
+[b]iWeightResetDebounceMs[/b], [b]iTngApplyDebounceMs[/b] and [b]iTngPrimeTimeoutMs[/b] - timings for changes that re-equip or re-skin the actor. Leave these alone unless something is misbehaving.
+
+[b]bWriteODFRules[/b] - turn off to make every change last only for the session.
+[b]logLevel[/b] - trace, debug, info, warn, error, critical or off. Worth raising to debug if you are reporting something.[/size][/spoiler]
+
+
+[center][color=#ffd966][size=5][b]F.A.Q[/b][/size][/color][/center]
+
+[color=#ffe599][size=4][b]Nothing happens when I grab an NPC.[/b][/size][/color]
+[size=4]Check that 3DUI and HIGGS are installed. If they are, the NPC may simply have nothing on offer - the overlay editor needs a unique named NPC, and the body editor needs OBody NG.[/size]
+
+[color=#ffe599][size=4][b]I only get one icon when I pull the trigger.[/b][/size][/color]
+[size=4]That is the menu telling you only one editor applies to that actor, so it opens it straight away rather than asking.[/size]
+
+[color=#ffe599][size=4][b]Do I have to press anything to save what I picked?[/b][/size][/color]
+[size=4]No. The overlay you are looking at when you leave is the one they keep. The check button is a shortcut, not a toll.[/size]
+
+[color=#ffe599][size=4][b]Why can't I edit bandits or guards?[/b][/size][/color]
+[size=4]They all share a single base record, and an overlay stored against it would end up on every one of them. Their bodies can still be edited - only the overlay editor is limited this way.[/size]
+
+[color=#ffe599][size=4][b]It says every overlay slot is full.[/b][/size][/color]
+[size=4]An actor has six slots per body part by default. Take one off in the menu, or raise [i]iNumOverlays[/i] in RaceMenu's [i]skeevr.ini[/i].[/size]
+
+[color=#ffe599][size=4][b]Do I need SlaveTats for my SlaveTats packs to show up?[/b][/size][/color]
+[size=4]No. Only the packs themselves are read, and the mod is never called.[/size]
+
+[color=#ffe599][size=4][b]I uninstalled the mod and the NPCs still have their tattoos.[/b][/size][/color]
+[size=4]That is Overlay Distribution Framework applying the rule file this mod left behind. Delete it from [i]Data\SKSE\Plugins\ODF_distribution_rules[/i] and they stop.[/size]
+
+[color=#ffe599][size=4][b]Can I edit myself?[/b][/size][/color]
+[size=4]Yes - open the menu on anyone and press the target button to switch to yourself.[/size]
+
+[color=#ffe599][size=4][b]I undressed someone and closed the menu by accident.[/b][/size][/color]
+[size=4]They are dressed again already. Undressing is only ever there to let you see what you are doing.[/size]
+
+[color=#ffe599][size=4][b]Does it work in flat Skyrim?[/b][/size][/color]
+[size=4]No. The menu is held in your hands, so this is VR only.[/size]
+
+
+[center][color=#ffd966][size=5][b]ACKNOWLEDGEMENTS AND CREDITS[/b][/size][/color][/center]
+
+[size=4]◈ [url=https://www.nexusmods.com/skyrimspecialedition/mods/155120]Overlay Distribution Framework[/url] - for a way to give an NPC an overlay that is still there the next time you load.[/size]
+[size=4]◈ [url=https://www.nexusmods.com/skyrimspecialedition/mods/156898]RacemenuVR[/url] and the SKEE overlay system it carries.[/size]
+[size=4]◈ [url=https://www.nexusmods.com/skyrimspecialedition/mods/77016]OBody NG[/url] - for the preset handling the body editor is built on.[/size]
+[size=4]◈ [url=https://www.nexusmods.com/skyrimspecialedition/mods/43930]HIGGS[/url] - for hands that can hold an NPC in the first place.[/size]
+[size=4]◈ AI was used in the making of this mod's source code.[/size]
+[size=4]◈ Icons by Icons8.[/size]
+
+
+[center][color=#ffd966][size=5][b]SOURCE CODE[/b][/size][/color][/center]
+[center][size=4][url=https://github.com/bellbound/VR-NPC-Editor]Github[/url][/size][/center]
