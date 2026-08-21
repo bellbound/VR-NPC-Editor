@@ -91,34 +91,38 @@ namespace NPCEditor {
         constexpr float kSizeTextZ   = kAddonRowZ + kGroupGap;
         constexpr float kSizeRowZ    = kSizeTextZ + kTextGap;
 
-        // The square layout: two steppers above the orb, two below, each pair a column
-        // offset either side of it. The rows keep their own bottom-to-top shape - the
-        // stepper above the line it is labelled by - so the bottom pair hangs below the
-        // orb by one group gap and the top pair sits one group gap plus its own label
-        // above it.
-        constexpr float kGridTopRowZ     = kToolRowZ + kGroupGap + kTextGap;
-        constexpr float kGridTopTextZ    = kToolRowZ + kGroupGap;
-        constexpr float kGridBottomRowZ  = kToolRowZ - kGroupGap;
-        constexpr float kGridBottomTextZ = kGridBottomRowZ - kTextGap;
-        constexpr float kGridInfoZ       = kGridBottomTextZ - kGroupGap;
+        // The square layout: the four steppers in two columns of two, stacked above the
+        // tool row rather than around it. The orb used to sit in the middle of them,
+        // which cost the square a stepper's worth of air in both directions to clear it -
+        // a hole in the middle of the menu that the eye read as a missing row. Below
+        // everything it costs nothing, and the tool row keeps kToolRowZ, which is where
+        // ShowAtHand lands the menu.
+        constexpr float kGridBottomTextZ = kToolRowZ + kGroupGap;
+        constexpr float kGridBottomRowZ  = kGridBottomTextZ + kTextGap;
+
+        // The one gap the square is really made of: the air between a column's lower
+        // stepper and the label of its upper one. One group gap, the same as the gap
+        // between any two other groups in this menu - it was two, one either side of the
+        // orb, and with the orb gone there is nothing left in there to clear.
+        constexpr float kGridTopTextZ    = kGridBottomRowZ + kGroupGap;
+        constexpr float kGridTopRowZ     = kGridTopTextZ + kTextGap;
 
         // How far either column sits from the middle. A stepper is three elements at 8.0
-        // spacing and so about 24 wide; at 20 out, the inner ends of the two columns are
-        // a comfortable clear of the orb between them without the outer ends going where
-        // an arm has to travel to reach them.
-        constexpr float kGridColumnX = 20.0f;
+        // spacing, so its outer elements sit 8 either side of its own centre: at 14 out,
+        // the two columns' innermost elements are 12 apart - half again the gap between
+        // two elements of the same row, which is enough to read as two groups and no
+        // more. It was 20, which left them 24 apart, three times the in-row gap.
+        constexpr float kGridColumnX = 14.0f;
 
         // How hard the menu is bent round the player - see Root::SetCurvature, which
         // judges a radius against the menu's own half-width and not its distance from the
         // head. Twice the half-width carries the edges through half a radian, which is
-        // the clear curve the interface describes; the square layout is about 64 wide and
+        // the clear curve the interface describes; the square layout is about 52 wide and
         // the column about 24, so each gets its own.
         //
-        // Horizontal only, in both. Vertical curvature bends about the root's origin, and
-        // this root's origin is the tool row rather than the middle of the stack - the orb
-        // has to land on the hand - so a vertical bend would tip the whole menu forward
-        // instead of bowing its top and bottom evenly.
-        constexpr float kGridCurveRadius   = 64.0f;
+        // Both axes, in both layouts - see the SetCurvature call in LayoutRows for what
+        // the vertical one does from an origin that sits at the foot of the stack.
+        constexpr float kGridCurveRadius   = 52.0f;
         constexpr float kColumnCurveRadius = 24.0f;
 
         // 3DUI multiplies this by 1.25 internally, which is what VR Dress Up's info line
@@ -298,8 +302,7 @@ namespace NPCEditor {
         };
 
         if (grid) {
-            // Weight over preset on the left, addon over size on the right, the orb in
-            // the middle of the four.
+            // Weight over preset on the left, addon over size on the right.
             place(m_weightRow,  -kGridColumnX, kGridTopRowZ);
             place(m_weightText, -kGridColumnX, kGridTopTextZ);
             place(m_addonRow,    kGridColumnX, kGridTopRowZ);
@@ -308,8 +311,6 @@ namespace NPCEditor {
             place(m_presetText, -kGridColumnX, kGridBottomTextZ);
             place(m_sizeRow,     kGridColumnX, kGridBottomRowZ);
             place(m_sizeText,    kGridColumnX, kGridBottomTextZ);
-            place(m_toolRow,     0.0f,         kToolRowZ);
-            place(m_infoText,    0.0f,         kGridInfoZ);
         } else {
             place(m_sizeRow,    0.0f, kSizeRowZ);
             place(m_sizeText,   0.0f, kSizeTextZ);
@@ -319,16 +320,29 @@ namespace NPCEditor {
             place(m_weightText, 0.0f, kWeightTextZ);
             place(m_presetRow,  0.0f, kPresetRowZ);
             place(m_presetText, 0.0f, kPresetTextZ);
-            place(m_toolRow,    0.0f, kToolRowZ);
-            place(m_infoText,   0.0f, kInfoZ);
         }
+
+        // The same in both: discard, orb and keep in one centred row under everything,
+        // with the status line under that.
+        place(m_toolRow,  0.0f, kToolRowZ);
+        place(m_infoText, 0.0f, kInfoZ);
 
         // Bend the rows round the player like a curved monitor, the same treatment VR
         // Dress Up gives its wheel. Free as far as the layouts are concerned: 3DUI
         // applies it after they have laid out, so every spacing above is still the flat
         // number it was tuned as.
+        //
+        // Both axes. The root's origin is the tool row at the bottom rather than the
+        // middle of the stack - that is where ShowAtHand lands the menu, and the orb has
+        // to meet the hand - and the curve is a function of the offset from that origin,
+        // so the vertical bend is one-sided: the tool row does not move and every row
+        // above it leans in and tilts down that much harder. That is the wanted shape
+        // rather than a compromise - a menu living above hand height wants its top
+        // brought toward you and turned down to face you. A symmetric dome would need the
+        // rows re-centred on the origin, which would put the menu round the hand instead
+        // of above it.
         m_root->SetCurvature(grid ? kGridCurveRadius : kColumnCurveRadius,
-                             /*horizontal*/ true, /*vertical*/ false, /*tiltElements*/ true);
+                             /*horizontal*/ true, /*vertical*/ true, /*tiltElements*/ true);
 
         if (moving) {
             spdlog::info("Body menu: laid out as {}", grid ? "a square about the orb"

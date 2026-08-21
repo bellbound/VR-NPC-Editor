@@ -122,10 +122,9 @@ namespace NPCEditor::Overlay {
         // radian: the clear curve the interface describes, without wrapping a menu this
         // narrow round far enough to start reaching back at the player's shoulder.
         //
-        // Horizontal only. Vertical curvature bends about the root's own origin, and this
-        // root's origin is the tool row at the bottom of the stack rather than its middle
-        // - the orb has to land on the hand - so a vertical bend would tip the whole menu
-        // forward instead of bowing its top and bottom evenly.
+        // The rows stack a good 31 units above the tool row, which is more than the menu
+        // is wide from the middle, so the vertical axis is bent too - see the call in
+        // BuildMenu for what that does from an origin at the foot of the stack.
         constexpr float kMenuCurveRadius = 45.0f;
 
         // How often the menu looks at whether the actor still has a free overlay slot.
@@ -276,9 +275,18 @@ namespace NPCEditor::Overlay {
         // Bend the rows round the player like a curved monitor, the same treatment VR
         // Dress Up gives its wheel. It costs the layouts nothing - 3DUI applies it after
         // they have laid out, so spacings and scroll extents are still the flat numbers
-        // they were tuned as. See kMenuCurveRadius for the radius and for why the
-        // vertical axis is left alone.
-        m_root->SetCurvature(kMenuCurveRadius, /*horizontal*/ true, /*vertical*/ false,
+        // they were tuned as. See kMenuCurveRadius for the radius.
+        //
+        // Both axes. The root's origin is the tool row at the bottom rather than the
+        // middle of the stack - that is where ShowAtHand lands the menu, and the orb has
+        // to meet the hand - and the curve is a function of the offset from that origin,
+        // so the vertical bend is one-sided: the tool row does not move and every row
+        // above it leans in and tilts down that much harder. That is the wanted shape
+        // rather than a compromise - a menu living above hand height wants its top
+        // brought toward you and turned down to face you. A symmetric dome would need the
+        // rows re-centred on the origin, which would put the menu round the hand instead
+        // of above it.
+        m_root->SetCurvature(kMenuCurveRadius, /*horizontal*/ true, /*vertical*/ true,
                              /*tiltElements*/ true);
 
         auto makeRow = [this](const char* id, float spacing, float width) -> P3DUI::ScrollableContainer* {

@@ -30,7 +30,7 @@ Four rows: what the actor is already wearing, a stepper that browses one overlay
 
 Four steppers and a tool row: BodySlide preset, weight in 25% steps, and — when [The New Gentleman](https://www.nexusmods.com/skyrimspecialedition/mods/104215) is installed — its addon list for that actor and the size category that goes with it.
 
-With all four on offer the menu is a square about the orb — weight and addon above it, preset and size below — which halves its height and puts every stepper the same short reach from the handle. Any of them missing and it falls back to the single column it has always been: a square with a hole in it reads as a menu that has broken.
+With all four on offer they pack into two columns of two — weight over preset, addon over size — above the tool row, which halves the menu's height. Any of them missing and it falls back to the single column it has always been: a square with a hole in it reads as a menu that has broken.
 
 Both editors share one **edit session**: undo reverts everything since you opened the NPC, across both.
 
