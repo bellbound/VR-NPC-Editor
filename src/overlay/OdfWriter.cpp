@@ -55,14 +55,19 @@ namespace NPCEditor::Overlay::OdfWriter {
                 if (const auto* entry = catalog->FindEntry(applied.qualifiedId)) {
                     appliedEntries.push_back(entry);
 
-                    // The look that was actually written, not the pack's declaration.
+                    // The look that was actually written, not the pack's declaration -
                     // ODF re-applies this at the next game start and it is the only
-                    // record of the choice that outlives the session, so a rule built
-                    // from the entry alone hands the player back the pack's own colour -
-                    // which across the installed packs is almost always black.
+                    // record of the choice that outlives the session.
+                    //
+                    // Colour and alpha are always spelled out, even when nothing chose
+                    // one. Leaving the key off does not mean "untinted" to ODF: it fills
+                    // in a default of its own (0x0A042D, near-black), so an overlay the
+                    // menu drew with no tint came back dark after a restart. Untinted is
+                    // white at full strength, which is what NiOverride shows when no tint
+                    // override is written, so that is what the rule has to say.
                     const auto look = LookFor(*entry, applied.appearance);
-                    if (look.color) overlay["color"] = FormatColor(*look.color);
-                    if (look.alpha) overlay["alpha"] = *look.alpha;
+                    overlay["color"] = FormatColor(look.color.value_or(0xFFFFFF));
+                    overlay["alpha"] = look.alpha.value_or(1.0f);
                     if (look.glowColor) {
                         overlay["glow"] = true;
                         overlay["glowColor"] = FormatColor(*look.glowColor);
