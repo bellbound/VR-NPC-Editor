@@ -35,6 +35,10 @@ namespace NPCEditor::Health {
             "cross.dds", "check.dds",
             "weight_0.dds", "weight_25.dds", "weight_50.dds", "weight_75.dds", "weight_100.dds",
             "tng-addon.dds", "tng-addon_highlight.dds",
+            "tng-size_0.dds", "tng-size_25.dds", "tng-size_50.dds", "tng-size_75.dds",
+            "tng-size_100.dds",
+            // Undo and redo, both faces each.
+            "undo.dds", "undo_disabled.dds", "redo.dds", "redo_disabled.dds",
         };
 
         std::vector<Dependency> g_dependencies;

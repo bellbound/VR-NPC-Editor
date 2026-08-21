@@ -253,6 +253,14 @@ namespace Skee {
         return std::nullopt;
     }
 
+    bool HasFreeSlot(RE::Actor* actor, Location loc) {
+        const uint32_t count = GetSlotCount(loc);
+        for (uint32_t i = 0; i < count; ++i) {
+            if (!IsSlotOccupied(actor, GetNodeName(loc, i))) return true;
+        }
+        return false;
+    }
+
     std::vector<std::string> GetOccupiedSlots(RE::Actor* actor, Location loc) {
         std::vector<std::string> occupied;
         const uint32_t count = GetSlotCount(loc);

@@ -53,7 +53,16 @@ namespace NPCEditor::Tng {
 
         // Where in `entries` the actor currently sits.
         int index = 0;
+
+        // The actor's size category, TNG's own 0-4 for X-Small to X-Large. Empty when
+        // TNG could not answer - it returns -1 for that - which is what hides the size
+        // stepper rather than opening it on a made-up value.
+        std::optional<int> size;
     };
+
+    // The five size categories, in TNG's order.
+    constexpr int kSizeCategories = 5;
+    const wchar_t* SizeLabel(int category);
 
     // Dispatches the three reads for `actor`, discarding anything still in flight
     // from a previous call. `generation` is echoed back through every callback so a
@@ -63,6 +72,11 @@ namespace NPCEditor::Tng {
     // Non-blocking poll. Returns a value only once every answer for `generation`
     // has landed (or been established as never coming).
     std::optional<AddonState> Collect(std::uint64_t generation);
+
+    // Fire-and-forget, `category` in 0-4. TNG also takes -2 for "back to the default
+    // for this race" and -1 for "leave it alone"; neither is offered here, because a
+    // stepper that walks five sizes and two words is a stepper you have to read.
+    void SetSize(RE::Actor* actor, int category);
 
     // Fire-and-forget. `choice` is TNG's own convention:
     //   -3 player default, -2 default, -1 no genital, 0..n the addon at entries[n+2]

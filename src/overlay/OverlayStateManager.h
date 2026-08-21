@@ -27,6 +27,8 @@ namespace NPCEditor::Overlay {
             // this was recorded. For those the pack's own declaration is the only honest
             // answer, and LookFor falls back to it.
             std::optional<Skee::Appearance> appearance;
+
+            bool operator==(const Applied&) const = default;
         };
 
         struct ActorState {

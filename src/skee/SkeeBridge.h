@@ -30,6 +30,8 @@ namespace Skee {
         std::optional<float> alpha;
         std::optional<uint32_t> glowColor;
         std::optional<float> glowIntensity;
+
+        bool operator==(const Appearance&) const = default;
     };
 
     // Loads the overlay slot counts from skeevr.ini / skee64.ini. Safe to call twice.
@@ -60,6 +62,12 @@ namespace Skee {
     // live 3D. A caller that means to reuse a slot it just gave up has to remember it
     // rather than expect to find it here.
     std::optional<std::string> FindFreeSlot(RE::Actor* actor, Location loc);
+
+    // The same question without the answer or the warning FindFreeSlot logs when it
+    // comes back empty. Asked repeatedly - the overlay menu polls it to know when there
+    // is no room left for another overlay - so a miss must not be an event.
+    bool HasFreeSlot(RE::Actor* actor, Location loc);
+
     std::vector<std::string> GetOccupiedSlots(RE::Actor* actor, Location loc);
 
     // Persistent: recorded by RaceMenu and written to its co-save.

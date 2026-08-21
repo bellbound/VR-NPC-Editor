@@ -19,6 +19,7 @@ set(headers ${headers}
     src/util/StringUtil.h
     src/overlay/OverlayCatalog.h
     src/overlay/OverlayStateManager.h
+    src/overlay/OverlayHistory.h
     src/overlay/OdfWriter.h
     src/overlay/OverlayColors.h
     src/overlay/SlaveTatsImport.h

@@ -53,6 +53,7 @@ struct Positionable;
 struct Element;
 struct Text;
 struct Container;
+struct ScrollWheel;
 struct ScrollableContainer;
 struct Root;
 struct Interface001;
@@ -494,6 +495,44 @@ struct Container : Positionable {
 };
 
 // =============================================================================
+// ScrollWheel - Half-wheel container with scroll position control
+// =============================================================================
+// What CreateScrollWheel returns. The wheel scrolls by rotation rather than by
+// translation, so it shares the grids' normalized scroll accessors but none of
+// their fill-direction or origin controls - hence its own type rather than
+// ScrollableContainer.
+//
+// Child 0 is the anchor handle: it sits at the centre and is never scrolled away,
+// so a scroll position of 0.0 still shows it along with the first ring of items.
+
+struct ScrollWheel : Container {
+    // === Scroll Position ===
+    // Get current scroll position as normalized value (0.0 = start, 1.0 = end).
+    // Returns 0.0 when the wheel holds too few items to scroll.
+    virtual float GetScrollPosition() = 0;
+
+    // Set scroll position as normalized value (0.0 = start, 1.0 = end).
+    // Values are clamped to valid range [0.0, 1.0]. Because the range is derived
+    // from the current children, set this after the wheel has been filled.
+    virtual void SetScrollPosition(float position) = 0;
+
+    // Reset scroll to the start position (equivalent to SetScrollPosition(0.0f))
+    virtual void ResetScroll() = 0;
+
+    // === Reserved for future expansion ===
+    virtual void _scrollwheel_reserved1() {}
+    virtual void _scrollwheel_reserved2() {}
+    virtual void _scrollwheel_reserved3() {}
+    virtual void _scrollwheel_reserved4() {}
+    virtual void _scrollwheel_reserved5() {}
+    virtual void _scrollwheel_reserved6() {}
+    virtual void _scrollwheel_reserved7() {}
+    virtual void _scrollwheel_reserved8() {}
+    virtual void _scrollwheel_reserved9() {}
+    virtual void _scrollwheel_reserved10() {}
+};
+
+// =============================================================================
 // ScrollableContainer - Container with scroll position control
 // =============================================================================
 // Used for grid containers that support scrolling:
@@ -595,8 +634,47 @@ struct Root : Container {
         EndPositioning();
     }
 
+    // === Curvature ===
+    // Bend the menu's flat plane of elements toward the player, like a curved
+    // monitor: the further from the centre an element sits, the further forward and
+    // the further inward it comes, so a menu too wide to reach the edges of becomes
+    // one you can. It is a post-process over whatever the containers laid out, so
+    // every element in this root's hierarchy - grids, wheels, labels, backdrops and
+    // free-standing text alike - bends without any of them being told about it.
+    //
+    //   radius     Radius of the cylinder the plane is rolled onto, in game units.
+    //              0 turns curvature off. Smaller bends harder.
+    //
+    //              Judge it against the menu's own half-width, not against how far
+    //              away it sits: what the eye reads as "curved" is how far round the
+    //              cylinder the edges get carried, which is halfWidth/radius. Ten
+    //              times the half-width is a bow you have to look for; twice it is a
+    //              clear curve; at about two thirds of it the edges are carried
+    //              through a full right angle and wrap hard around the player. A
+    //              menu 45 units to its widest element therefore wants a radius in
+    //              the 30s, not the 90-odd units it sits from the head.
+    //   horizontal Bend left and right edges forward. The usual choice: menus grow
+    //              wider far more often than they grow taller.
+    //   vertical   Bend top and bottom edges forward as well, giving a dome rather
+    //              than a cylinder.
+    //   tiltElements  Turn each element to stay square to the curve. Without it the
+    //              edge elements keep the flat plane's facing and are seen at a
+    //              glancing angle. Ignored for any element whose own facingMode is
+    //              not None - one that already turns to face the player has no use
+    //              for it.
+    //
+    //              The turn is capped at about 50 degrees however hard the curve is,
+    //              so position goes on rolling round - which is where the reach comes
+    //              from - while the far elements stay legible instead of turning
+    //              their own edge to the player.
+    //
+    // Spacing is preserved along the arc, so no layout, spacing or scroll setting
+    // needs adjusting when curvature is switched on: a row keeps its item count and
+    // its gaps, it just stops being flat. Hover and grab follow the curve too, since
+    // interaction is tested against the same positions that are drawn.
+    virtual void SetCurvature(float radius, bool horizontal, bool vertical, bool tiltElements) = 0;
+
     // === Reserved for future expansion ===
-    virtual void _root_reserved1() {}
     virtual void _root_reserved2() {}
     virtual void _root_reserved3() {}
     virtual void _root_reserved4() {}
@@ -685,10 +763,21 @@ struct Root : Container {
 // 0.10.11.0 changed nothing in this header either. The font metrics loader now honours the
 // RFC-4180 quoting the mapping CSV's Character column uses, so the comma glyph is loaded
 // instead of being dropped from every label, tooltip and text node that contained one.
+//
+// 0.10.12.0 added Root::SetCurvature in the _root_reserved1 slot - additive, so a patch bump
+// on the same grounds as 0.10.1.0. A consumer that never calls it gets the flat menus it
+// always had; the curve is off unless a radius is set.
+//
+// 0.10.13.0 gave the half-wheel the scroll accessors the grids have had all along:
+// CreateScrollWheel now returns ScrollWheel* rather than Container*, where ScrollWheel is
+// Container plus Get/SetScrollPosition and ResetScroll. This is additive in the same sense
+// as 0.10.1.0 even though a signature moved: the returned pointer is unchanged, the object's
+// Container vtable prefix is unchanged, and a consumer built against any earlier header
+// still compiles and still dispatches correctly through the Container* it stores.
 constexpr uint32_t P3DUI_INTERFACE_VERSION =
     0 * 1000000 +
     10 * 10000 +
-    11 * 100 +
+    13 * 100 +
     0;
 
 struct Interface001 {
@@ -708,7 +797,7 @@ struct Interface001 {
     // Create nodes. Caller must add to a container via AddChild().
     virtual Element* CreateElement(const ElementConfig& config) = 0;
     virtual Text* CreateText(const TextConfig& config) = 0;
-    virtual Container* CreateScrollWheel(const ScrollWheelConfig& config) = 0;
+    virtual ScrollWheel* CreateScrollWheel(const ScrollWheelConfig& config) = 0;
     virtual Container* CreateWheel(const WheelConfig& config) = 0;
 
     // === Scrollable Grid Containers ===

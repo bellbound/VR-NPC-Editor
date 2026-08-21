@@ -22,10 +22,13 @@ What you choose stays on them - through saves, and through restarts.[/b][/quote]
 [size=4]Twenty colours, each at full and at three-quarter strength, plus four skin tones. A swatch repaints what you last put on, so you can settle the colour after you have settled the tattoo.[/size]
 
 [color=#ffe599][size=4][b]◈ See What They Are Already Wearing[/b][/size][/color]
-[size=4]The top row shows everything on them, including overlays other mods distributed. Tap one to jump the stepper to it, and press the dice to take it off.[/size]
+[size=4]The top row shows everything on them, including overlays other mods distributed. Tap one to jump the stepper to it, and press the dice to take it off. When every overlay slot on them is spent, the stepper and the pack filter step aside and that row is how you take one back off.[/size]
 
 [color=#ffe599][size=4][b]◈ Change Their Body[/b][/size][/color]
 [size=4]The body editor steps through every BodySlide preset that fits them, applying each one as you go. Weight is a five-step dial next to it.[/size]
+
+[color=#ffe599][size=4][b]◈ Take A Press Back[/b][/size][/color]
+[size=4]Undo and redo lead the overlay editor's tool row, one press at a time, so a colour you did not like or a tattoo you put on by mistake costs one button rather than the whole sitting.[/size]
 
 [color=#ffe599][size=4][b]◈ Undress To See Your Work[/b][/size][/color]
 [size=4]One button takes their clothes off so you can see what you are doing, and puts them back when you close the menu - whether or not you remember to.[/size]
@@ -43,7 +46,7 @@ What you choose stays on them - through saves, and through restarts.[/b][/quote]
 [size=4]Everything you apply is written out as an Overlay Distribution Framework rule, so the NPC is still wearing it after a restart - and on any save where you meet them.[/size]
 
 [color=#ffe599][size=4][b]◈ The New Gentleman[/b][/size][/color]
-[size=4]If TNG is installed, the body editor grows a third stepper for the addons it offers that actor.[/size]
+[size=4]If TNG is installed, the body editor grows two more steppers - the addons it offers that actor, and the size to wear them at. With all four steppers on offer the menu folds into a square around the orb instead of a tall column.[/size]
 
 
 [center][color=#ffd966][size=5][b]REQUIREMENTS[/b][/size][/color][/center]

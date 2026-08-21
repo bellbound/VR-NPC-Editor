@@ -32,10 +32,12 @@ HL_LIGHT = "#2e2b54"
 HL_DARK = "#da619b"
 
 # Icons that get a plain _highlight variant.
-BASES = ["dice", "weight", "paint-palette", "tng-addon"]
+BASES = ["dice", "weight", "paint-palette", "tng-addon", "tng-size"]
 
 # Icons that get fill-level variants, and the levels they get.
-GAUGES = {"weight": [0, 25, 50, 75, 100]}
+# TNG's five size categories - XS, S, M, L, XL - read as a gauge filling up, the
+# same way the five weight steps do.
+GAUGES = {"weight": [0, 25, 50, 75, 100], "tng-size": [0, 25, 50, 75, 100]}
 
 # Icons that are another icon turned on the spot: name -> (source, degrees clockwise).
 # The chevrons are one piece of artwork pointed four ways rather than four drawings that

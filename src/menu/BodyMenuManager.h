@@ -8,14 +8,21 @@
 #include "api/ThreeDUIInterface001.h"
 
 namespace NPCEditor {
-    // The body editor: four short rows, bottom to top - tools, a BodySlide preset
-    // stepper, a weight stepper, and a TNG addon stepper - each stepper with its
-    // current value written out underneath it.
+    // The body editor: four steppers - a BodySlide preset, a weight, a TNG addon and a
+    // TNG size - each with its current value written out underneath it, and a tool row
+    // carrying the orb.
     //
-    // The addon stepper is the odd one out. The other two read their current value
-    // from loaded forms on the spot; TNG has no C++ interface, so that row's contents
+    // How they are arranged depends on how many of them there are to arrange. With all
+    // four available the menu is a square about the orb - weight and addon above it,
+    // preset and size below - which is half the height of the stack and puts every
+    // stepper within the same short reach of the handle. Any stepper missing and it
+    // falls back to the single column it has always been: a square with a hole in it
+    // reads as a menu that has broken rather than as one with less to offer.
+    //
+    // The two TNG steppers are the odd ones out. Presets and weight read their current
+    // value from loaded forms on the spot; TNG has no C++ interface, so its rows' contents
     // have to come back through the Papyrus VM, which answers a frame or more after
-    // being asked. So it opens hidden and appears once its answers land - see
+    // being asked. So they open hidden and appear once the answers land - see
     // PrimeAddon/PollAddon.
     //
     // It used to be a scrolling grid of every preset the actor had, two elements a row.
@@ -55,7 +62,17 @@ namespace NPCEditor {
         void PopulatePresetRow();
         void PopulateWeightRow();
         void PopulateAddonRow();
+        void PopulateSizeRow();
         void PopulateToolRow();
+
+        // Whether every stepper is on offer, and so whether the menu is a square about
+        // the orb or the single column it falls back to.
+        bool UseGridLayout() const;
+
+        // Places every row and text for whichever of those two it is, and bends the menu
+        // by however much that layout is wide. Called whenever a row appears or goes
+        // away, which for the TNG rows is frames after the menu opened.
+        void LayoutRows();
 
         // Registered with FrameHook while the menu is open; drives the auto-repeat and
         // the weight debounce.
@@ -72,6 +89,13 @@ namespace NPCEditor {
         void CommitWeight();
         void UpdateWeightText();
         void SyncWeightStep();
+
+        // TNG size
+        void StepSize(int delta);
+        void CommitSize();
+        void UpdateSizeText();
+        std::wstring SizeTooltip() const;
+        bool HasSizeRow() const;
 
         // TNG addon
         void PrimeAddon();
@@ -98,10 +122,12 @@ namespace NPCEditor {
         P3DUI::ScrollableContainer* m_presetRow = nullptr;
         P3DUI::ScrollableContainer* m_weightRow = nullptr;
         P3DUI::ScrollableContainer* m_addonRow = nullptr;
+        P3DUI::ScrollableContainer* m_sizeRow = nullptr;
         P3DUI::ScrollableContainer* m_toolRow = nullptr;
         P3DUI::Text* m_presetText = nullptr;
         P3DUI::Text* m_weightText = nullptr;
         P3DUI::Text* m_addonText = nullptr;
+        P3DUI::Text* m_sizeText = nullptr;
         P3DUI::Text* m_infoText = nullptr;
 
         // The centre of each stepper, kept so its tooltip and its gauge texture can be
@@ -110,6 +136,7 @@ namespace NPCEditor {
         P3DUI::Element* m_presetIcon = nullptr;
         P3DUI::Element* m_weightIcon = nullptr;
         P3DUI::Element* m_addonIcon = nullptr;
+        P3DUI::Element* m_sizeIcon = nullptr;
 
         bool m_open = false;
         RE::ActorHandle m_npcHandle;
@@ -160,5 +187,18 @@ namespace NPCEditor {
         // Deferred like the weight commit: every write swaps the actor's skin.
         bool m_tngPending = false;
         Clock::time_point m_tngRequestedAt{};
+
+        // The actor's TNG size category, 0-4, and npos-equivalent -1 for "TNG would not
+        // say", which is what hides the row. `m_tngInitialSize` is where it was when the
+        // menu opened, so Undo can put it back - the same reason the addon keeps one.
+        int m_tngSize = -1;
+        int m_tngInitialSize = -1;
+        bool m_tngSizePending = false;
+        Clock::time_point m_tngSizeRequestedAt{};
+
+        // Which of the two layouts the rows are currently placed in. LayoutRows compares
+        // against it to tell an actual move from a re-place at the same coordinates, and
+        // only a move has to take its rows down and put them back up.
+        bool m_gridLayout = false;
     };
 }

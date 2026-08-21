@@ -39,6 +39,12 @@ namespace NPCEditor {
         constexpr const char* kAddonIconId  = "vrnpce_body_addon_icon";
         constexpr const char* kAddonNextId  = "vrnpce_body_addon_next";
 
+        constexpr const char* kSizeRowId    = "vrnpce_body_sizerow";
+        constexpr const char* kSizeTextId   = "vrnpce_body_sizetext";
+        constexpr const char* kSizePrevId   = "vrnpce_body_size_prev";
+        constexpr const char* kSizeIconId   = "vrnpce_body_size_icon";
+        constexpr const char* kSizeNextId   = "vrnpce_body_size_next";
+
         constexpr const char* kAnchorId   = "vrnpce_body_orb";
         constexpr const char* kUndoId     = "vrnpce_tool_undo";
         constexpr const char* kDoneId     = "vrnpce_tool_done";
@@ -50,6 +56,10 @@ namespace NPCEditor {
         constexpr const char* kTexUndo     = "textures\\VRNPCEditor\\cross.dds";
         constexpr const char* kTexDone     = "textures\\VRNPCEditor\\check.dds";
         constexpr const char* kTexAddon    = "textures\\VRNPCEditor\\tng-addon.dds";
+
+        // The five size categories fill a gauge the same way the five weight steps
+        // do - see SizeTexture below.
+        constexpr const char* kTexSize     = "textures\\VRNPCEditor\\tng-size.dds";
         constexpr const char* kAnchorModel = "meshes\\3DUI\\orb.nif";
 
         constexpr float kElementScale = 1.2f;
@@ -67,9 +77,9 @@ namespace NPCEditor {
         constexpr float kTextGap  = 4.2f;
         constexpr float kGroupGap = 6.5f;
 
-        // Bottom to top: tools, the preset stepper and its name, the weight stepper and
-        // its percentage, then the TNG addon stepper and its name. Each text sits
-        // kTextGap under the row it belongs to.
+        // The column layout, bottom to top: tools, the preset stepper and its name, the
+        // weight stepper and its percentage, the TNG addon stepper and its name, and the
+        // TNG size stepper on top. Each text sits kTextGap under the row it belongs to.
         constexpr float kToolRowZ    = 0.0f;
         constexpr float kInfoZ       = kToolRowZ - kGroupGap;
         constexpr float kPresetTextZ = kToolRowZ + kGroupGap;
@@ -78,6 +88,38 @@ namespace NPCEditor {
         constexpr float kWeightRowZ  = kWeightTextZ + kTextGap;
         constexpr float kAddonTextZ  = kWeightRowZ + kGroupGap;
         constexpr float kAddonRowZ   = kAddonTextZ + kTextGap;
+        constexpr float kSizeTextZ   = kAddonRowZ + kGroupGap;
+        constexpr float kSizeRowZ    = kSizeTextZ + kTextGap;
+
+        // The square layout: two steppers above the orb, two below, each pair a column
+        // offset either side of it. The rows keep their own bottom-to-top shape - the
+        // stepper above the line it is labelled by - so the bottom pair hangs below the
+        // orb by one group gap and the top pair sits one group gap plus its own label
+        // above it.
+        constexpr float kGridTopRowZ     = kToolRowZ + kGroupGap + kTextGap;
+        constexpr float kGridTopTextZ    = kToolRowZ + kGroupGap;
+        constexpr float kGridBottomRowZ  = kToolRowZ - kGroupGap;
+        constexpr float kGridBottomTextZ = kGridBottomRowZ - kTextGap;
+        constexpr float kGridInfoZ       = kGridBottomTextZ - kGroupGap;
+
+        // How far either column sits from the middle. A stepper is three elements at 8.0
+        // spacing and so about 24 wide; at 20 out, the inner ends of the two columns are
+        // a comfortable clear of the orb between them without the outer ends going where
+        // an arm has to travel to reach them.
+        constexpr float kGridColumnX = 20.0f;
+
+        // How hard the menu is bent round the player - see Root::SetCurvature, which
+        // judges a radius against the menu's own half-width and not its distance from the
+        // head. Twice the half-width carries the edges through half a radian, which is
+        // the clear curve the interface describes; the square layout is about 64 wide and
+        // the column about 24, so each gets its own.
+        //
+        // Horizontal only, in both. Vertical curvature bends about the root's origin, and
+        // this root's origin is the tool row rather than the middle of the stack - the orb
+        // has to land on the hand - so a vertical bend would tip the whole menu forward
+        // instead of bowing its top and bottom evenly.
+        constexpr float kGridCurveRadius   = 64.0f;
+        constexpr float kColumnCurveRadius = 24.0f;
 
         // 3DUI multiplies this by 1.25 internally, which is what VR Dress Up's info line
         // renders at. The old preset names rode along on the elements as label text,
@@ -93,6 +135,20 @@ namespace NPCEditor {
                 case 2:  return "textures\\VRNPCEditor\\weight_50.dds";
                 case 3:  return "textures\\VRNPCEditor\\weight_75.dds";
                 default: return "textures\\VRNPCEditor\\weight_100.dds";
+            }
+        }
+
+        // Same five-step gauge as the weight icon, and for the same reason: the number
+        // that matters is which of five it is, and a bar filling up says that without
+        // anyone having to read a word.
+        const char* SizeTexture(int category) {
+            switch (category) {
+                case 0:  return "textures\\VRNPCEditor\\tng-size_0.dds";
+                case 1:  return "textures\\VRNPCEditor\\tng-size_25.dds";
+                case 2:  return "textures\\VRNPCEditor\\tng-size_50.dds";
+                case 3:  return "textures\\VRNPCEditor\\tng-size_75.dds";
+                case 4:  return "textures\\VRNPCEditor\\tng-size_100.dds";
+                default: return kTexSize;
             }
         }
 
@@ -161,8 +217,10 @@ namespace NPCEditor {
             return false;
         }
 
-        // Every row is three elements wide and never scrolls.
-        auto makeRow = [this](const char* id, float z) -> P3DUI::ScrollableContainer* {
+        // Every row is three elements wide and never scrolls. Where it goes is
+        // LayoutRows' business: which rows there are decides that, and two of them are
+        // not known about until the VM answers, frames from now.
+        auto makeRow = [this](const char* id) -> P3DUI::ScrollableContainer* {
             auto config = P3DUI::ColumnGridConfig::Default(id);
             config.numRows = 1;
             config.columnSpacing = 8.0f;
@@ -173,13 +231,12 @@ namespace NPCEditor {
             if (!row) return nullptr;
 
             m_root->AddChild(row);
-            row->SetLocalPosition(0.0f, 0.0f, z);
             row->SetFillDirection(P3DUI::VerticalFill::TopToBottom, P3DUI::HorizontalFill::LeftToRight);
             row->SetOrigin(P3DUI::VerticalOrigin::Center, P3DUI::HorizontalOrigin::Center);
             return row;
         };
 
-        auto makeText = [this](const char* id, float z, float scale) -> P3DUI::Text* {
+        auto makeText = [this](const char* id, float scale) -> P3DUI::Text* {
             auto config = P3DUI::TextConfig::Default(id);
             config.facingMode = P3DUI::FacingMode::YawOnly;
             config.scale = scale;
@@ -188,26 +245,96 @@ namespace NPCEditor {
             if (!text) return nullptr;
 
             m_root->AddChild(text);
-            text->SetLocalPosition(0.0f, 0.0f, z);
             text->SetVisible(false);
             return text;
         };
 
         // Built unconditionally, TNG installed or not: rows are created once here and
-        // never destroyed, only their children refilled. Whether the addon stepper is
-        // offered is a question of visibility, decided per actor in PopulateAddonRow.
-        m_addonRow   = makeRow(kAddonRowId, kAddonRowZ);
-        m_addonText  = makeText(kAddonTextId, kAddonTextZ, kRowTextScale);
-        m_weightRow  = makeRow(kWeightRowId, kWeightRowZ);
-        m_weightText = makeText(kWeightTextId, kWeightTextZ, kRowTextScale);
-        m_presetRow  = makeRow(kPresetRowId, kPresetRowZ);
-        m_presetText = makeText(kPresetTextId, kPresetTextZ, kRowTextScale);
-        m_toolRow    = makeRow(kToolRowId, kToolRowZ);
-        m_infoText   = makeText(kInfoId, kInfoZ, kRowTextScale);
+        // never destroyed, only their children refilled. Whether the TNG steppers are
+        // offered is a question of visibility, decided per actor in their Populate*.
+        m_sizeRow    = makeRow(kSizeRowId);
+        m_sizeText   = makeText(kSizeTextId, kRowTextScale);
+        m_addonRow   = makeRow(kAddonRowId);
+        m_addonText  = makeText(kAddonTextId, kRowTextScale);
+        m_weightRow  = makeRow(kWeightRowId);
+        m_weightText = makeText(kWeightTextId, kRowTextScale);
+        m_presetRow  = makeRow(kPresetRowId);
+        m_presetText = makeText(kPresetTextId, kRowTextScale);
+        m_toolRow    = makeRow(kToolRowId);
+        m_infoText   = makeText(kInfoId, kRowTextScale);
 
+        LayoutRows();
         m_root->SetVisible(false);
         spdlog::info("Body menu: built");
         return true;
+    }
+
+    bool BodyMenuManager::UseGridLayout() const {
+        return !m_presets.empty() && Health::CanEditWeight(GetTargetActor()) && HasAddonRow() &&
+               HasSizeRow();
+    }
+
+    void BodyMenuManager::LayoutRows() {
+        const bool grid = UseGridLayout();
+
+        // Only a change of layout actually moves anything, and only then is the dance
+        // below worth its flicker.
+        const bool moving = grid != m_gridLayout;
+
+        auto place = [moving](P3DUI::Positionable* thing, float x, float z) {
+            if (!thing) return;
+
+            // A filled container that moves drags its contents after it: every element
+            // under it is a projectile lerping toward wherever its parent has gone, so
+            // the whole row visibly flies across the menu. Hidden, they are released and
+            // rebound at the target when the row comes back - the same trick
+            // PopulateHidden uses when a row is refilled.
+            const bool wasVisible = moving && thing->IsVisible();
+            if (wasVisible) thing->SetVisible(false);
+
+            thing->SetLocalPosition(x, 0.0f, z);
+
+            if (wasVisible) thing->SetVisible(true);
+        };
+
+        if (grid) {
+            // Weight over preset on the left, addon over size on the right, the orb in
+            // the middle of the four.
+            place(m_weightRow,  -kGridColumnX, kGridTopRowZ);
+            place(m_weightText, -kGridColumnX, kGridTopTextZ);
+            place(m_addonRow,    kGridColumnX, kGridTopRowZ);
+            place(m_addonText,   kGridColumnX, kGridTopTextZ);
+            place(m_presetRow,  -kGridColumnX, kGridBottomRowZ);
+            place(m_presetText, -kGridColumnX, kGridBottomTextZ);
+            place(m_sizeRow,     kGridColumnX, kGridBottomRowZ);
+            place(m_sizeText,    kGridColumnX, kGridBottomTextZ);
+            place(m_toolRow,     0.0f,         kToolRowZ);
+            place(m_infoText,    0.0f,         kGridInfoZ);
+        } else {
+            place(m_sizeRow,    0.0f, kSizeRowZ);
+            place(m_sizeText,   0.0f, kSizeTextZ);
+            place(m_addonRow,   0.0f, kAddonRowZ);
+            place(m_addonText,  0.0f, kAddonTextZ);
+            place(m_weightRow,  0.0f, kWeightRowZ);
+            place(m_weightText, 0.0f, kWeightTextZ);
+            place(m_presetRow,  0.0f, kPresetRowZ);
+            place(m_presetText, 0.0f, kPresetTextZ);
+            place(m_toolRow,    0.0f, kToolRowZ);
+            place(m_infoText,   0.0f, kInfoZ);
+        }
+
+        // Bend the rows round the player like a curved monitor, the same treatment VR
+        // Dress Up gives its wheel. Free as far as the layouts are concerned: 3DUI
+        // applies it after they have laid out, so every spacing above is still the flat
+        // number it was tuned as.
+        m_root->SetCurvature(grid ? kGridCurveRadius : kColumnCurveRadius,
+                             /*horizontal*/ true, /*vertical*/ false, /*tiltElements*/ true);
+
+        if (moving) {
+            spdlog::info("Body menu: laid out as {}", grid ? "a square about the orb"
+                                                           : "a single column");
+        }
+        m_gridLayout = grid;
     }
 
     RE::Actor* BodyMenuManager::GetTargetActor() const {
@@ -256,9 +383,11 @@ namespace NPCEditor {
         // written to the base record and never applied to the model.
         if (m_weightPending) CommitWeight();
 
-        // Same for the addon: the label showed the new one, so closing without writing
-        // it would silently discard a change the player watched themselves make.
+        // Same for the addon and the size: the label showed the new one, so closing
+        // without writing it would silently discard a change the player watched
+        // themselves make.
         if (m_tngPending) CommitAddon();
+        if (m_tngSizePending) CommitSize();
 
         if (m_root) {
             m_root->EndPositioning();
@@ -292,6 +421,10 @@ namespace NPCEditor {
             }
         }
 
+        // Before the rows are filled, so a row that has to move does it while empty.
+        LayoutRows();
+
+        PopulateSizeRow();
         PopulateAddonRow();
         PopulateWeightRow();
         PopulatePresetRow();
@@ -300,6 +433,7 @@ namespace NPCEditor {
         UpdatePresetText();
         UpdateWeightText();
         UpdateAddonText();
+        UpdateSizeText();
 
         if (m_presets.empty()) {
             ShowInfo(Obody::IsReady() ? L"No BodySlide presets for this actor"
@@ -422,6 +556,44 @@ namespace NPCEditor {
         });
     }
 
+    // Offered exactly when the addon stepper is, and only once TNG has said what size
+    // the actor is: a stepper that opens on a made-up value writes that value to the
+    // actor the moment it is touched.
+    bool BodyMenuManager::HasSizeRow() const {
+        return HasAddonRow() && m_tngSize >= 0;
+    }
+
+    void BodyMenuManager::PopulateSizeRow() {
+        if (!m_sizeRow) return;
+
+        m_sizeIcon = nullptr;
+        m_sizeRow->Clear();
+
+        if (!HasSizeRow()) {
+            m_sizeRow->SetVisible(false);
+            if (m_sizeText) m_sizeText->SetVisible(false);
+            return;
+        }
+
+        PopulateHidden(m_sizeRow, [this] {
+            auto add = [this](const char* id, const char* texture, const wchar_t* tooltip) -> P3DUI::Element* {
+                auto config = P3DUI::ElementConfig::Default(id);
+                config.texturePath = texture;
+                config.tooltip = tooltip;
+                config.scale = kElementScale;
+                config.facingMode = P3DUI::FacingMode::None;
+
+                auto* element = m_api->CreateElement(config);
+                if (element) m_sizeRow->AddChild(element);
+                return element;
+            };
+
+            add(kSizePrevId, kTexPrev, L"Smaller");
+            m_sizeIcon = add(kSizeIconId, SizeTexture(m_tngSize), L"Size - tap to cycle");
+            add(kSizeNextId, kTexNext, L"Bigger");
+        });
+    }
+
     void BodyMenuManager::PopulateToolRow() {
         if (!m_toolRow) return;
 
@@ -503,6 +675,8 @@ namespace NPCEditor {
                 else if (m_repeatId == kWeightNextId) StepWeight(1);
                 else if (m_repeatId == kAddonPrevId)  StepAddon(-1);
                 else if (m_repeatId == kAddonNextId)  StepAddon(1);
+                else if (m_repeatId == kSizePrevId)   StepSize(-1);
+                else if (m_repeatId == kSizeNextId)   StepSize(1);
             }
         }
 
@@ -517,6 +691,14 @@ namespace NPCEditor {
             const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_tngRequestedAt);
             if (waited.count() >= Config::options.tngApplyDebounceMs) {
                 CommitAddon();
+            }
+        }
+
+        if (m_tngSizePending) {
+            const auto waited =
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - m_tngSizeRequestedAt);
+            if (waited.count() >= Config::options.tngApplyDebounceMs) {
+                CommitSize();
             }
         }
     }
@@ -658,6 +840,9 @@ namespace NPCEditor {
         m_tngIndex = 0;
         m_tngInitialIndex = 0;
         m_tngPending = false;
+        m_tngSize = -1;
+        m_tngInitialSize = -1;
+        m_tngSizePending = false;
 
         if (!Health::IsFeatureAvailable(Health::Feature::Tng)) {
             // Nothing will ever arrive, so the poll must not sit waiting for it.
@@ -686,6 +871,11 @@ namespace NPCEditor {
             m_tngIndex = state->index;
             m_tngInitialIndex = m_tngIndex;
 
+            // -1 stands for "TNG would not say", which is what leaves the size row
+            // hidden while the addon row is up.
+            m_tngSize = state->size.value_or(-1);
+            m_tngInitialSize = m_tngSize;
+
             // Info, not debug, and it names both gates: a hidden row is otherwise
             // indistinguishable from a broken one, and the default log level is info -
             // so a debug line here is a diagnostic nobody testing this can actually
@@ -712,9 +902,13 @@ namespace NPCEditor {
             }
 
             // Out here rather than in the VM callback that produced it: building a row
-            // is a 3DUI call, and 3DUI is main-thread only.
+            // is a 3DUI call, and 3DUI is main-thread only. The layout goes first:
+            // these two rows arriving is what decides between the square and the column.
+            LayoutRows();
             PopulateAddonRow();
+            PopulateSizeRow();
             UpdateAddonText();
+            UpdateSizeText();
             return;
         }
 
@@ -808,6 +1002,61 @@ namespace NPCEditor {
         Tng::SetAddon(actor, choice);
     }
 
+    // ===== TNG size =====
+
+    std::wstring BodyMenuManager::SizeTooltip() const {
+        if (!HasSizeRow()) return L"No size";
+
+        return std::wstring(Tng::SizeLabel(m_tngSize)) + L" (" + std::to_wstring(m_tngSize + 1) +
+               L"/" + std::to_wstring(Tng::kSizeCategories) + L")";
+    }
+
+    void BodyMenuManager::UpdateSizeText() {
+        if (!m_sizeText) return;
+
+        if (!HasSizeRow()) {
+            m_sizeText->SetVisible(false);
+            return;
+        }
+
+        m_sizeText->SetText(Tng::SizeLabel(m_tngSize));
+        m_sizeText->SetVisible(true);
+
+        if (m_sizeIcon) {
+            m_sizeIcon->SetTexture(SizeTexture(m_tngSize));
+            m_sizeIcon->SetTooltip(SizeTooltip().c_str());
+        }
+    }
+
+    void BodyMenuManager::StepSize(int delta) {
+        if (!HasSizeRow()) return;
+
+        // Wraps, so a held chevron walks the five without dead-ending.
+        m_tngSize = (m_tngSize + delta + Tng::kSizeCategories) % Tng::kSizeCategories;
+
+        // Deferred like the addon and the weight: a size change rescales the actor, and
+        // a held chevron must cost one rescale rather than one per step.
+        m_tngSizePending = true;
+        m_tngSizeRequestedAt = Clock::now();
+
+        const bool hadChanges = EditSession::GetSingleton()->HasChanges();
+        EditSession::GetSingleton()->NoteChange("tng size");
+        if (!hadChanges) m_toolRowDirty = true;
+
+        UpdateSizeText();
+    }
+
+    void BodyMenuManager::CommitSize() {
+        m_tngSizePending = false;
+
+        auto* actor = GetTargetActor();
+        if (!actor || !HasSizeRow()) return;
+
+        spdlog::info("Body menu: applying TNG size category {} of {} to '{}'", m_tngSize + 1,
+                     Tng::kSizeCategories, actor->GetName());
+        Tng::SetSize(actor, m_tngSize);
+    }
+
     // ===== Tools =====
 
     void BodyMenuManager::UndoChanges() {
@@ -822,6 +1071,10 @@ namespace NPCEditor {
         if (HasAddonRow() && m_tngIndex != m_tngInitialIndex) {
             m_tngIndex = m_tngInitialIndex;
             CommitAddon();
+        }
+        if (HasSizeRow() && m_tngSize != m_tngInitialSize) {
+            m_tngSize = m_tngInitialSize;
+            CommitSize();
         }
 
         SyncWeightStep();
@@ -857,7 +1110,8 @@ namespace NPCEditor {
 
         const bool isStepper = id == kPresetPrevId || id == kPresetNextId ||
                                id == kWeightPrevId || id == kWeightNextId ||
-                               id == kAddonPrevId  || id == kAddonNextId;
+                               id == kAddonPrevId  || id == kAddonNextId  ||
+                               id == kSizePrevId   || id == kSizeNextId;
 
         switch (event->type) {
             case P3DUI::EventType::ActivateDown: {
@@ -872,10 +1126,18 @@ namespace NPCEditor {
                     else if (id == kWeightNextId) StepWeight(1);
                     else if (id == kAddonPrevId)  StepAddon(-1);
                     else if (id == kAddonNextId)  StepAddon(1);
+                    else if (id == kSizePrevId)   StepSize(-1);
+                    else if (id == kSizeNextId)   StepSize(1);
                     return true;
                 }
                 if (id == kWeightIconId) {
                     StepWeight(1);
+                    return true;
+                }
+                // Safe inline for the same reason as the weight icon: it moves an index
+                // and rewrites a label, and destroys nothing 3DUI is walking.
+                if (id == kSizeIconId) {
+                    StepSize(1);
                     return true;
                 }
                 // Safe to run inline, unlike the tool buttons: it moves an index and
@@ -892,7 +1154,10 @@ namespace NPCEditor {
                     EndRepeat();
                     return true;
                 }
-                if (id == kWeightIconId || id == kPresetIconId || id == kAddonIconId) return true;
+                if (id == kWeightIconId || id == kPresetIconId || id == kAddonIconId ||
+                    id == kSizeIconId) {
+                    return true;
+                }
 
                 // Same as the orb, and safe to do inline for the same reason: closing
                 // tears the menu down wholesale rather than rebuilding a row underneath
@@ -923,8 +1188,8 @@ namespace NPCEditor {
 
             case P3DUI::EventType::HoverEnter:
                 return isStepper || id == kPresetIconId || id == kWeightIconId ||
-                       id == kAddonIconId || id == kAnchorId || id == kUndoId ||
-                       id == kDoneId;
+                       id == kAddonIconId || id == kSizeIconId || id == kAnchorId ||
+                       id == kUndoId || id == kDoneId;
 
             default:
                 return false;

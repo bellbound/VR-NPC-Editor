@@ -36,10 +36,12 @@ namespace NPCEditor::Tng {
             bool modifiableDone = false;
             bool entriesDone = false;
             bool currentDone = false;
+            bool sizeDone = false;
 
             std::optional<int32_t> canModify;
             std::vector<std::string> entries;
             std::string currentName;
+            std::optional<int32_t> size;
 
             // Field by field rather than `*this = {}`: the mutex above makes the
             // struct neither copyable nor movable, and it is held while this runs.
@@ -48,9 +50,11 @@ namespace NPCEditor::Tng {
                 modifiableDone = false;
                 entriesDone = false;
                 currentDone = false;
+                sizeDone = false;
                 canModify.reset();
                 entries.clear();
                 currentName.clear();
+                size.reset();
             }
         };
 
@@ -91,6 +95,19 @@ namespace NPCEditor::Tng {
 
         std::wstring Widen(std::string_view text) { return std::wstring(text.begin(), text.end()); }
     }  // namespace
+
+    const wchar_t* SizeLabel(int category) {
+        // TNG's own MCM names, which are translation keys there ($TNG_SXS and friends).
+        // 3DUI renders a $ string verbatim, so they are spelled out here instead.
+        switch (category) {
+            case 0:  return L"X-Small";
+            case 1:  return L"Small";
+            case 2:  return L"Medium";
+            case 3:  return L"Large";
+            case 4:  return L"X-Large";
+            default: return L"";
+        }
+    }
 
     void Initialize() {
         // Two independent signals, because a partial install fails one and not the
@@ -142,8 +159,8 @@ namespace NPCEditor::Tng {
         // bind.
         const std::vector<Papyrus::PapyrusValue> args{static_cast<RE::Actor*>(actor)};
 
-        // All three at once - they are independent, and serialising them would cost
-        // three round-trips of latency for nothing.
+        // All four at once - they are independent, and serialising them would cost four
+        // round-trips of latency for nothing.
         const bool sentModifiable = papyrus->CallGlobalFunctionOptInt(
             kScript, "CanModifyActor", args, [generation](std::optional<int32_t> result) {
                 std::lock_guard lock(g_capture.mutex);
@@ -181,17 +198,28 @@ namespace NPCEditor::Tng {
                 g_capture.currentDone = true;
             });
 
+        const bool sentSize = papyrus->CallGlobalFunctionOptInt(
+            kScript, "GetActorSize", args, [generation](std::optional<int32_t> result) {
+                std::lock_guard lock(g_capture.mutex);
+                if (g_capture.generation != generation) {
+                    return;
+                }
+                g_capture.size = result;
+                g_capture.sizeDone = true;
+            });
+
         // A refused dispatch never reaches the VM, so its callback is guaranteed not
         // to fire. Marking it done now is the difference between the row staying
         // hidden and the poll spinning until its timeout.
-        if (!sentModifiable || !sentEntries || !sentCurrent) {
-            spdlog::warn("TNG: dispatch refused (modifiable={} entries={} current={})",
-                         sentModifiable, sentEntries, sentCurrent);
+        if (!sentModifiable || !sentEntries || !sentCurrent || !sentSize) {
+            spdlog::warn("TNG: dispatch refused (modifiable={} entries={} current={} size={})",
+                         sentModifiable, sentEntries, sentCurrent, sentSize);
             std::lock_guard lock(g_capture.mutex);
             if (g_capture.generation == generation) {
                 g_capture.modifiableDone = g_capture.modifiableDone || !sentModifiable;
                 g_capture.entriesDone = g_capture.entriesDone || !sentEntries;
                 g_capture.currentDone = g_capture.currentDone || !sentCurrent;
+                g_capture.sizeDone = g_capture.sizeDone || !sentSize;
             }
         }
     }
@@ -202,7 +230,8 @@ namespace NPCEditor::Tng {
         if (g_capture.generation != generation) {
             return std::nullopt;
         }
-        if (!g_capture.modifiableDone || !g_capture.entriesDone || !g_capture.currentDone) {
+        if (!g_capture.modifiableDone || !g_capture.entriesDone || !g_capture.currentDone ||
+            !g_capture.sizeDone) {
             return std::nullopt;
         }
 
@@ -214,7 +243,28 @@ namespace NPCEditor::Tng {
         state.modifiable = g_capture.canModify.has_value() && *g_capture.canModify > 0;
         state.entries = g_capture.entries;
         state.index = state.modifiable ? ResolveIndex(state.entries, g_capture.currentName) : 0;
+
+        // TNG answers -1 when it cannot size this actor, and nullopt when the VM handed
+        // back something that was not an Int. Both mean there is no size to show.
+        if (state.modifiable && g_capture.size && *g_capture.size >= 0 &&
+            *g_capture.size < kSizeCategories) {
+            state.size = *g_capture.size;
+        }
         return state;
+    }
+
+    void SetSize(RE::Actor* actor, int category) {
+        if (!g_available || !actor) {
+            return;
+        }
+
+        spdlog::debug("TNG: SetActorSize({}) on '{}'", category, actor->GetName());
+        Papyrus::PapyrusInterface::GetSingleton()->CallGlobalFunction(
+            kScript, "SetActorSize", {static_cast<RE::Actor*>(actor), category});
+
+        // No NiNode update here, unlike SetAddon: TNG rescales the node it already has
+        // rather than swapping the actor's skin, and its own MCM does not queue one
+        // after a size change either.
     }
 
     void SetAddon(RE::Actor* actor, int choice) {

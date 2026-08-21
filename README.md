@@ -23,10 +23,14 @@ Four rows: what the actor is already wearing, a stepper that browses one overlay
   ![The colour swatches](assets/demo/overlays-color-select.jpg)
 
 - Toggles between the grabbed NPC and the player without letting go.
+- Undo and redo at the head of the tool row, a step per press, for the sitting.
+- A body only has so many overlay slots. Once they are all spent the stepper and the pack filter are hidden, since there is nothing left to browse to; the applied row stays, and its items then take an overlay off rather than select it.
 
 ### Body editor
 
-Three steppers and a tool row: BodySlide preset, weight in 25% steps, and — when [The New Gentleman](https://www.nexusmods.com/skyrimspecialedition/mods/104215) is installed — its addon list for that actor.
+Four steppers and a tool row: BodySlide preset, weight in 25% steps, and — when [The New Gentleman](https://www.nexusmods.com/skyrimspecialedition/mods/104215) is installed — its addon list for that actor and the size category that goes with it.
+
+With all four on offer the menu is a square about the orb — weight and addon above it, preset and size below — which halves its height and puts every stepper the same short reach from the handle. Any of them missing and it falls back to the single column it has always been: a square with a hole in it reads as a menu that has broken.
 
 Both editors share one **edit session**: undo reverts everything since you opened the NPC, across both.
 

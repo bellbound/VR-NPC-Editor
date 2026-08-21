@@ -21,6 +21,12 @@ namespace NPCEditor::Overlay {
     // chunked. The stepper shows one at a time and costs five elements no matter how
     // large the pack is, the same trade the body menu made for its presets.
     //
+    // A body only has so many overlay slots. Once every kind an installed pack could
+    // fill is spent, the stepper and the pack filter are hidden: there is nothing left to
+    // browse to, and a row of controls that cannot do anything is worse than no row. What
+    // stays is the applied row, whose items then take an overlay off rather than select
+    // it, because taking one off is the only move left that gets you anywhere.
+    //
     // Browsing is non-destructive: stepping writes the overlay to the actor through
     // NiOverride's non-persistent path, so you see it on the body, and only the check
     // button commits it - or leaving does it for you. Walking away from an overlay you
@@ -85,6 +91,35 @@ namespace NPCEditor::Overlay {
         void PopulateToolRow();
         void FillToolRow();
 
+        // ===== Undo and redo =====
+
+        // A button with nothing behind it is drawn greyed out and its press does nothing,
+        // the same bargain VR Dress Up's pair strikes.
+        void UpdateHistoryButtons();
+        void OnUndo();
+        void OnRedo();
+
+        // Rebuilds what a history restore changed. Deliberately not RefreshAll: that
+        // reconciles the record against the actor's live slots, and a restore's writes
+        // are still queued in the Papyrus VM when this runs.
+        void AfterHistoryRestore();
+
+        // ===== Slots =====
+
+        // Whether an installed pack could still put anything on this actor. Reads the
+        // actor's live 3D, so see PollSlotFullness for when it is allowed to be asked.
+        bool SlotsFull() const;
+
+        // Which kinds of slot the installed packs can fill for whoever is being edited.
+        // A pack with nothing for this sex has no say in whether they have run out of
+        // room, and neither does a kind of slot no pack targets.
+        void RebuildSlotLocations();
+
+        // Freeing a slot is a Papyrus write that lands a frame or more later, so the
+        // answer cannot be recomputed at the press that caused it. Polled from Tick
+        // instead, on a throttle - each check walks the actor's 3D for named nodes.
+        void PollSlotFullness();
+
         // Registered with FrameHook while the menu is open; drives the chevron auto-repeat.
         void Tick();
         void BeginRepeat(const std::string& id);
@@ -141,22 +176,23 @@ namespace NPCEditor::Overlay {
         void RetintSelected();
 
         void OnAppliedActivated(size_t index);
+        void RemoveApplied(size_t index);
         void OnPackActivated(size_t index);
         void OnColorActivated(size_t index);
         void OnToolActivated(const std::string& id);
         void ClearAllOverlays();
 
         // The status line, which sits directly under the pack row and so doubles as that
-        // row's label. It has three kinds of tenant. Resting is what the row is -
-        // "Available Overlays" - and is what the line falls back to. ShowInfo is a result -
-        // "that slot is full", "loading" - and stays until something replaces it.
-        // ShowHint is what the hand is resting on, and only a hint is taken down when the
-        // hand moves away, so drifting off an unrelated button no longer wipes the answer
-        // you just asked for.
+        // row's label. Resting is what the row is - "Available Overlays" - and is what
+        // the line falls back to; ShowInfo is a result - "that slot is full", "loading" -
+        // and stays until something replaces it.
+        //
+        // It used to echo whatever the hand was resting on as well, which was a tooltip
+        // written in a second place: 3DUI already puts every element's own tooltip up
+        // beside the hand, so the line was saying the same thing twice and wiping real
+        // answers to do it.
         std::wstring RestingInfo() const;
         void ShowInfo(const std::wstring& text);
-        void ShowHint(const std::wstring& text);
-        void ClearHint();
         void ClearInfo();
 
         // "Applied Overlays", under the top row, and hidden while that row is empty.
@@ -181,6 +217,11 @@ namespace NPCEditor::Overlay {
         // resting on mid-hold.
         P3DUI::Element* m_pickIcon = nullptr;
         P3DUI::Element* m_randomButton = nullptr;
+
+        // Kept for the same reason: their faces change as the history moves, and the row
+        // must not be rebuilt under the hand that is pressing them.
+        P3DUI::Element* m_undoButton = nullptr;
+        P3DUI::Element* m_redoButton = nullptr;
 
         bool m_open = false;
         RE::ActorHandle m_npcHandle;
@@ -213,9 +254,6 @@ namespace NPCEditor::Overlay {
         size_t m_selectedColor = 0;
         bool m_colorRowOpen = false;
 
-        // Whether the status line is currently showing a hover hint rather than a result.
-        bool m_infoIsHint = false;
-
         // The overlay currently on the actor as a non-persistent preview, the slot it was
         // written into, and what kind of slot that is. Cleared on commit and on menu
         // close. Stepping to another overlay of the same kind writes straight over the
@@ -226,6 +264,12 @@ namespace NPCEditor::Overlay {
         std::string m_previewId;
         std::string m_previewNode;
         Skee::Location m_previewLocation = Skee::Location::Body;
+
+        // Whether the actor has room for another overlay, and when that was last
+        // looked at. See PollSlotFullness.
+        std::vector<Skee::Location> m_slotLocations;
+        bool m_slotsFull = false;
+        Clock::time_point m_slotCheckAt{};
 
         // A preview asked for before the actor had overlay geometry, and when it was
         // asked for. Tick retries it until the geometry lands or the wait runs out.

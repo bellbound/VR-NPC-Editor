@@ -8,6 +8,7 @@
 #include "menu/MenuRouter.h"
 #include "overlay/OdfWriter.h"
 #include "overlay/OverlayColors.h"
+#include "overlay/OverlayHistory.h"
 #include "overlay/OverlayStateManager.h"
 
 #include <algorithm>
@@ -39,6 +40,8 @@ namespace NPCEditor::Overlay {
         constexpr const char* kTargetId   = "vrnpce_tool_target";
         constexpr const char* kColorsId   = "vrnpce_tool_colors";
         constexpr const char* kClearId    = "vrnpce_tool_clear";
+        constexpr const char* kUndoId     = "vrnpce_tool_undo";
+        constexpr const char* kRedoId     = "vrnpce_tool_redo";
 
         constexpr const char* kRandomId   = "vrnpce_pick_random";
         constexpr const char* kPickPrevId = "vrnpce_pick_prev";
@@ -62,6 +65,10 @@ namespace NPCEditor::Overlay {
         constexpr const char* kTexRandom      = "textures\\VRNPCEditor\\dice.dds";
         constexpr const char* kTexRemove      = "textures\\VRNPCEditor\\cross.dds";
         constexpr const char* kTexCommit      = "textures\\VRNPCEditor\\check.dds";
+        constexpr const char* kTexUndo        = "textures\\VRNPCEditor\\undo.dds";
+        constexpr const char* kTexUndoOff     = "textures\\VRNPCEditor\\undo_disabled.dds";
+        constexpr const char* kTexRedo        = "textures\\VRNPCEditor\\redo.dds";
+        constexpr const char* kTexRedoOff     = "textures\\VRNPCEditor\\redo_disabled.dds";
         constexpr const char* kAnchorModel    = "meshes\\3DUI\\orb.nif";
 
         // The gallery highlight from VR Dress Up: a second, non-interactive projectile
@@ -107,6 +114,36 @@ namespace NPCEditor::Overlay {
         // an NPC is worse than one that is approximately right. Five stepper elements at
         // 8.0 spacing is the shape both rows are aiming at.
         constexpr float kStripWidth = 42.0f;
+
+        // How hard the menu is bent round the player - see Root::SetCurvature, which
+        // judges this against the menu's own half-width rather than its distance from the
+        // head. The widest thing here is the pack strip at 45 units, so half-width is a
+        // little over 22, and a radius of twice that carries the edges through half a
+        // radian: the clear curve the interface describes, without wrapping a menu this
+        // narrow round far enough to start reaching back at the player's shoulder.
+        //
+        // Horizontal only. Vertical curvature bends about the root's own origin, and this
+        // root's origin is the tool row at the bottom of the stack rather than its middle
+        // - the orb has to land on the hand - so a vertical bend would tip the whole menu
+        // forward instead of bowing its top and bottom evenly.
+        constexpr float kMenuCurveRadius = 45.0f;
+
+        // How often the menu looks at whether the actor still has a free overlay slot.
+        // Every check walks the actor's 3D for named nodes, and the answer only moves
+        // when a write reaches the actor, which is frames away in any case.
+        constexpr auto kSlotCheckInterval = std::chrono::milliseconds(250);
+
+        // The undo and redo faces. A button with nothing behind it is drawn greyed out
+        // and its press does nothing.
+        const char* HistoryTexture(bool undo, bool enabled) {
+            if (undo) return enabled ? kTexUndo : kTexUndoOff;
+            return enabled ? kTexRedo : kTexRedoOff;
+        }
+
+        const wchar_t* HistoryTooltip(bool undo, bool enabled) {
+            if (undo) return enabled ? L"Undo" : L"Nothing to undo";
+            return enabled ? L"Redo" : L"Nothing to redo";
+        }
 
         // The backdrop mesh is emissive: rgb is the hue and glow scales how hard it
         // burns. The mesh itself authors (0.24, 0.78, 1.0) at 2.4, so these are read
@@ -236,6 +273,14 @@ namespace NPCEditor::Overlay {
             return false;
         }
 
+        // Bend the rows round the player like a curved monitor, the same treatment VR
+        // Dress Up gives its wheel. It costs the layouts nothing - 3DUI applies it after
+        // they have laid out, so spacings and scroll extents are still the flat numbers
+        // they were tuned as. See kMenuCurveRadius for the radius and for why the
+        // vertical axis is left alone.
+        m_root->SetCurvature(kMenuCurveRadius, /*horizontal*/ true, /*vertical*/ false,
+                             /*tiltElements*/ true);
+
         auto makeRow = [this](const char* id, float spacing, float width) -> P3DUI::ScrollableContainer* {
             auto config = P3DUI::ColumnGridConfig::Default(id);
             config.columnSpacing = spacing;
@@ -329,6 +374,11 @@ namespace NPCEditor::Overlay {
         m_awaitingNodes = false;
         m_open = true;
 
+        // Per sitting, the same lifetime the body menu's session snapshot has.
+        History::GetSingleton()->Clear();
+        m_slotsFull = false;
+        m_slotCheckAt = Clock::now();
+
         // Asked for here rather than at the first preview. An NPC has no overlay geometry
         // until RaceMenu builds it, the build goes on the task queue, and anything written
         // before it lands is discarded - so the request goes in while the player is still
@@ -393,8 +443,13 @@ namespace NPCEditor::Overlay {
         m_appliedElements.clear();
         m_packElements.clear();
         m_colorElements.clear();
+        m_slotLocations.clear();
         m_pickIcon = nullptr;
         m_randomButton = nullptr;
+        m_undoButton = nullptr;
+        m_redoButton = nullptr;
+
+        History::GetSingleton()->Clear();
 
         if (m_root) {
             m_root->EndPositioning();
@@ -423,6 +478,12 @@ namespace NPCEditor::Overlay {
         if (actor) StateManager::GetSingleton()->SyncFromActor(actor);
 
         RebuildPickList();
+        RebuildSlotLocations();
+
+        // Read once here rather than left to the poll, so a menu opened on an actor with
+        // no room left comes up already showing that rather than showing a stepper for a
+        // quarter of a second first.
+        m_slotsFull = SlotsFull();
 
         PopulateAppliedRow();
         PopulatePickerRow();
@@ -478,7 +539,12 @@ namespace NPCEditor::Overlay {
             const auto id = std::string(kAppliedPrefix) + std::to_string(i);
             config.id = id.c_str();
             config.texturePath = entry->texture.c_str();
-            config.tooltip = entry->displayName.c_str();
+
+            // With every slot spent, pressing one of these takes it off - see
+            // OnAppliedActivated - so the tooltip has to say the thing the press does.
+            const auto tooltip = m_slotsFull ? L"Take off " + entry->displayName
+                                             : entry->displayName;
+            config.tooltip = tooltip.c_str();
             config.scale = Config::options.elementScale;
             config.facingMode = P3DUI::FacingMode::None;
 
@@ -504,7 +570,35 @@ namespace NPCEditor::Overlay {
 
     void MenuManager::OnAppliedActivated(size_t index) {
         if (index >= m_appliedEntries.size()) return;
+
+        // With the stepper hidden there is nothing to select these into, and taking one
+        // off is the only move that gets the player anywhere - so that is what the row
+        // does while it is the only row left.
+        if (m_slotsFull) {
+            RemoveApplied(index);
+            return;
+        }
         SelectEntry(m_appliedEntries[index]);
+    }
+
+    void MenuManager::RemoveApplied(size_t index) {
+        auto* actor = GetTargetActor();
+        if (!actor || index >= m_appliedEntries.size()) return;
+
+        const auto* entry = m_appliedEntries[index];
+        auto before = History::Capture(actor);
+
+        if (!StateManager::GetSingleton()->Remove(actor, *entry)) return;
+
+        if (m_selectedOverlay == entry->qualifiedId) m_selectedOverlay.clear();
+        History::GetSingleton()->Record(actor, std::move(before));
+        EditSession::GetSingleton()->NoteChange("overlay");
+
+        PersistToOdf();
+
+        PopulateAppliedRow();
+        UpdateHistoryButtons();
+        UpdatePickIcon();
     }
 
     // ===== The stepper =====
@@ -555,7 +649,11 @@ namespace NPCEditor::Overlay {
         m_randomButton = nullptr;
         m_pickerRow->Clear();
 
-        if (m_pickEntries.empty()) {
+        // No room for another overlay means nothing here can do anything: the chevrons
+        // would step through a list nothing can be taken from, and the check button would
+        // refuse every press. Cleared rather than merely hidden - 3DUI charges for every
+        // live element on every frame, on screen or not.
+        if (m_pickEntries.empty() || m_slotsFull) {
             m_pickerRow->SetVisible(false);
             if (m_pickText) m_pickText->SetVisible(false);
             return;
@@ -685,7 +783,7 @@ namespace NPCEditor::Overlay {
         if (!m_pickText) return;
 
         const auto* entry = CurrentPick();
-        if (!entry) {
+        if (!entry || m_slotsFull) {
             m_pickText->SetVisible(false);
             return;
         }
@@ -817,6 +915,10 @@ namespace NPCEditor::Overlay {
         auto* state = StateManager::GetSingleton();
         if (state->IsApplied(actor, *entry)) return;
 
+        // Taken before the write, handed to the history after it: the history compares
+        // the two and drops a press that moved nothing.
+        auto before = History::Capture(actor);
+
         // The preview of this very overlay is already in a slot, so the commit goes into
         // that same slot rather than releasing it and searching: the release would not
         // have reached the actor by the time the search reads it, and the overlay would
@@ -832,12 +934,14 @@ namespace NPCEditor::Overlay {
 
         // The one you just put on becomes the one a colour swatch repaints.
         m_selectedOverlay = entry->qualifiedId;
+        History::GetSingleton()->Record(actor, std::move(before));
         EditSession::GetSingleton()->NoteChange("overlay");
 
         ClearInfo();
         PersistToOdf();
 
         PopulateAppliedRow();
+        UpdateHistoryButtons();
         UpdatePickIcon();
     }
 
@@ -873,14 +977,17 @@ namespace NPCEditor::Overlay {
         auto* actor = GetTargetActor();
         if (!entry || !actor) return;
 
+        auto before = History::Capture(actor);
         if (!StateManager::GetSingleton()->Remove(actor, *entry)) return;
 
         if (m_selectedOverlay == entry->qualifiedId) m_selectedOverlay.clear();
+        History::GetSingleton()->Record(actor, std::move(before));
         EditSession::GetSingleton()->NoteChange("overlay");
 
         PersistToOdf();
 
         PopulateAppliedRow();
+        UpdateHistoryButtons();
         UpdatePickIcon();
     }
 
@@ -894,7 +1001,12 @@ namespace NPCEditor::Overlay {
 
         // The palette takes this same line. Cleared rather than merely hidden: 3DUI
         // charges per live element every frame, whether or not it is on screen.
-        if (m_colorRowOpen) {
+        //
+        // The full-slots case goes the same way: a pack filter over a stepper that is not
+        // there is a control whose every press changes nothing visible. The palette is
+        // deliberately still offered while full, because repainting what the actor
+        // already wears is a thing that still works.
+        if (m_colorRowOpen || m_slotsFull) {
             m_packRow->SetVisible(false);
             return;
         }
@@ -1066,6 +1178,7 @@ namespace NPCEditor::Overlay {
         const auto* entry = Catalog::GetSingleton()->FindEntry(m_selectedOverlay);
         if (!entry) return;
 
+        auto before = History::Capture(actor);
         if (!StateManager::GetSingleton()->Retint(actor, *entry, TintedAppearance(*entry))) {
             // Gone from under us - taken off through some other route, or the actor was
             // reloaded. Drop the selection rather than leaving a highlight pointing at
@@ -1076,8 +1189,10 @@ namespace NPCEditor::Overlay {
             return;
         }
 
+        History::GetSingleton()->Record(actor, std::move(before));
         EditSession::GetSingleton()->NoteChange("overlay");
         PersistToOdf();
+        UpdateHistoryButtons();
     }
 
     // ===== Tools =====
@@ -1089,60 +1204,36 @@ namespace NPCEditor::Overlay {
         PopulateHidden(m_toolRow, [this] { FillToolRow(); });
     }
 
+    // Left to right: undo, redo, the palette, the orb, then the bin, the target toggle
+    // and the clothes toggle. Three buttons either side of the handle, so the orb stays
+    // in the middle of the row whatever state the buttons are in.
     void MenuManager::FillToolRow() {
-        // Collected first, then split around the orb, so the handle sits in the middle
-        // of the row rather than wherever declaration order happened to leave it.
-        struct Button {
-            const char* id;
-            const char* texture;
-            const wchar_t* tooltip;
-        };
-        std::vector<Button> buttons;
-
-        // The library's highlight palette is how every other icon says "this is on", and
-        // the swatch row it opens is far enough down the menu to be easy to miss.
-        buttons.push_back({kColorsId,
-                           m_colorRowOpen ? kTexColorsOn : kTexColors,
-                           m_colorRowOpen ? L"Hide the colours" : L"Pick a colour"});
-
-        buttons.push_back({kTargetId,
-                           m_targetPlayer ? kTexTargetPlayer : kTexTargetNpc,
-                           m_targetPlayer ? L"Editing yourself - switch to the NPC"
-                                          : L"Editing the NPC - switch to yourself"});
-
-        // Undressing is how you see an overlay on the body it was painted for. Same
-        // two-state cycle as VR Dress Up's button: the icon says what pressing it does
-        // next, and the session redresses on close either way.
-        auto* actor = GetTargetActor();
-        const bool undressed = actor && UndressManager::GetSingleton()->IsUndressed(actor);
-        buttons.push_back({kClothesId,
-                           undressed ? kTexRedress : kTexUndress,
-                           undressed ? L"Put their clothes back" : L"Take their clothes off"});
-
-        auto addButton = [this](const Button& button) {
-            auto config = P3DUI::ElementConfig::Default(button.id);
-            config.texturePath = button.texture;
-            config.tooltip = button.tooltip;
+        auto addButton = [this](const char* id, const char* texture,
+                                const wchar_t* tooltip) -> P3DUI::Element* {
+            auto config = P3DUI::ElementConfig::Default(id);
+            config.texturePath = texture;
+            config.tooltip = tooltip;
             config.scale = kToolScale;
             config.facingMode = P3DUI::FacingMode::None;
 
-            if (auto* element = m_api->CreateElement(config)) m_toolRow->AddChild(element);
+            auto* element = m_api->CreateElement(config);
+            if (element) m_toolRow->AddChild(element);
+            return element;
         };
 
-        const size_t split = buttons.size() / 2;
-        for (size_t i = 0; i < split; ++i) addButton(buttons[i]);
+        // The pair leads the row, the same place VR Dress Up puts them, so the hand goes
+        // to the same end of either menu to take a press back.
+        const bool canUndo = History::GetSingleton()->CanUndo();
+        const bool canRedo = History::GetSingleton()->CanRedo();
+        m_undoButton = addButton(kUndoId, HistoryTexture(true, canUndo),
+                                 HistoryTooltip(true, canUndo));
+        m_redoButton = addButton(kRedoId, HistoryTexture(false, canRedo),
+                                 HistoryTooltip(false, canRedo));
 
-        // Immediately left of the orb, and unconditional in both target modes rather
-        // than gated on us having something on: the applied row is only ever as complete
-        // as the last sync, so "nothing to take off" is something the button says rather
-        // than a reason for it to go missing.
-        //
-        // It takes off what this menu recognises and nothing else. The player in
-        // particular arrives from chargen - or from another overlay mod - with hand and
-        // face slots already full of textures no installed pack declares, and those are
-        // not ours to wipe: emptying someone else's tattoos to free a slot is not a
-        // trade this button gets to make on the player's behalf.
-        addButton({kClearId, kTexClear, L"Take our overlays off"});
+        // The library's highlight palette is how every other icon says "this is on", and
+        // the swatch row it opens is far enough down the menu to be easy to miss.
+        addButton(kColorsId, m_colorRowOpen ? kTexColorsOn : kTexColors,
+                  m_colorRowOpen ? L"Hide the colours" : L"Pick a colour");
 
         // The same orb the body menu uses: grip drags the menu, trigger closes it.
         auto orbConfig = P3DUI::ElementConfig::Default(kAnchorId);
@@ -1153,7 +1244,29 @@ namespace NPCEditor::Overlay {
         orbConfig.facingMode = P3DUI::FacingMode::None;
         if (auto* orb = m_api->CreateElement(orbConfig)) m_toolRow->AddChild(orb);
 
-        for (size_t i = split; i < buttons.size(); ++i) addButton(buttons[i]);
+        // Immediately right of the orb, and unconditional in both target modes rather
+        // than gated on us having something on: the applied row is only ever as complete
+        // as the last sync, so "nothing to take off" is something the button says rather
+        // than a reason for it to go missing.
+        //
+        // It takes off what this menu recognises and nothing else. The player in
+        // particular arrives from chargen - or from another overlay mod - with hand and
+        // face slots already full of textures no installed pack declares, and those are
+        // not ours to wipe: emptying someone else's tattoos to free a slot is not a
+        // trade this button gets to make on the player's behalf.
+        addButton(kClearId, kTexClear, L"Take our overlays off");
+
+        addButton(kTargetId, m_targetPlayer ? kTexTargetPlayer : kTexTargetNpc,
+                  m_targetPlayer ? L"Editing yourself - switch to the NPC"
+                                 : L"Editing the NPC - switch to yourself");
+
+        // Undressing is how you see an overlay on the body it was painted for. Same
+        // two-state cycle as VR Dress Up's button: the icon says what pressing it does
+        // next, and the session redresses on close either way.
+        auto* actor = GetTargetActor();
+        const bool undressed = actor && UndressManager::GetSingleton()->IsUndressed(actor);
+        addButton(kClothesId, undressed ? kTexRedress : kTexUndress,
+                  undressed ? L"Put their clothes back" : L"Take their clothes off");
     }
 
     void MenuManager::ClearAllOverlays() {
@@ -1162,6 +1275,7 @@ namespace NPCEditor::Overlay {
 
         DropPreviewSlot();
 
+        auto before = History::Capture(actor);
         const size_t cleared = StateManager::GetSingleton()->ClearAll(actor);
         if (cleared == 0) {
             ShowInfo(L"There is nothing of ours to take off");
@@ -1169,12 +1283,14 @@ namespace NPCEditor::Overlay {
         }
 
         m_selectedOverlay.clear();
+        History::GetSingleton()->Record(actor, std::move(before));
         EditSession::GetSingleton()->NoteChange("overlay");
 
         ClearInfo();
         PersistToOdf();
 
         PopulateAppliedRow();
+        UpdateHistoryButtons();
         UpdatePickIcon();
     }
 
@@ -1201,6 +1317,10 @@ namespace NPCEditor::Overlay {
             m_selectedOverlay.clear();
             m_pickIndex = static_cast<size_t>(-1);
             m_targetPlayer = !m_targetPlayer;
+
+            // The stack describes the body we are leaving, and putting one of its
+            // snapshots on the other one is a press nobody made.
+            History::GetSingleton()->Clear();
             spdlog::info("Menu: target switched to {}", m_targetPlayer ? "the player" : "the NPC");
             RefreshAll();
             return;
@@ -1219,6 +1339,124 @@ namespace NPCEditor::Overlay {
             return;
         }
 
+    }
+
+    // ===== Undo and redo =====
+
+    // The history moved without the row being rebuilt: swap the faces in place, so a
+    // press does not destroy the element the hand is still resting on.
+    void MenuManager::UpdateHistoryButtons() {
+        auto* history = History::GetSingleton();
+
+        if (m_undoButton) {
+            const bool can = history->CanUndo();
+            m_undoButton->SetTexture(HistoryTexture(true, can));
+            m_undoButton->SetTooltip(HistoryTooltip(true, can));
+        }
+        if (m_redoButton) {
+            const bool can = history->CanRedo();
+            m_redoButton->SetTexture(HistoryTexture(false, can));
+            m_redoButton->SetTooltip(HistoryTooltip(false, can));
+        }
+    }
+
+    void MenuManager::OnUndo() {
+        auto* actor = GetTargetActor();
+        if (!actor || !History::GetSingleton()->CanUndo()) return;  // greyed out
+
+        // The preview is not in the history - it is not on the actor for real - and
+        // leaving it would put it back on top of whatever the restore writes.
+        DropPreviewSlot();
+
+        History::GetSingleton()->Undo(actor);
+        AfterHistoryRestore();
+    }
+
+    void MenuManager::OnRedo() {
+        auto* actor = GetTargetActor();
+        if (!actor || !History::GetSingleton()->CanRedo()) return;
+
+        DropPreviewSlot();
+
+        History::GetSingleton()->Redo(actor);
+        AfterHistoryRestore();
+    }
+
+    void MenuManager::AfterHistoryRestore() {
+        // Whatever a swatch was repainting may not be on the actor any more.
+        m_selectedOverlay.clear();
+
+        EditSession::GetSingleton()->NoteChange("overlay");
+        PersistToOdf();
+
+        // Rows only, no SyncFromActor: the restore's writes are still queued in the
+        // Papyrus VM, so reconciling the record against the actor's live slots now would
+        // read the state we have just left and write it back over the one we asked for.
+        // The slot poll picks the rest up once the writes have landed.
+        PopulateAppliedRow();
+        UpdateHistoryButtons();
+        UpdatePickIcon();
+        ClearInfo();
+    }
+
+    // ===== Slots =====
+
+    void MenuManager::RebuildSlotLocations() {
+        m_slotLocations.clear();
+
+        auto* actor = GetTargetActor();
+        if (!actor) return;
+
+        const auto wanted = IsFemale(actor) ? Gender::Female : Gender::Male;
+        for (const auto& entry : Catalog::GetSingleton()->GetEntries()) {
+            if (entry.gender != Gender::Any && entry.gender != wanted) continue;
+            if (std::find(m_slotLocations.begin(), m_slotLocations.end(), entry.location) ==
+                m_slotLocations.end()) {
+                m_slotLocations.push_back(entry.location);
+            }
+        }
+    }
+
+    bool MenuManager::SlotsFull() const {
+        auto* actor = GetTargetActor();
+        if (!actor || m_slotLocations.empty()) return false;
+
+        // The slot a live preview sits in is one the stepper writes straight over, so it
+        // is not spent until the preview is committed - and hiding the stepper out from
+        // under the overlay the player is looking at would be the worst possible moment.
+        if (!m_previewNode.empty()) return false;
+
+        for (const auto location : m_slotLocations) {
+            // Geometry RaceMenu has not built yet reads as having no free slots at all.
+            // Waiting for it is PreviewCurrent's job; treating it as full here would hide
+            // the menu on every open.
+            if (!Skee::HasOverlayNodes(actor, location)) return false;
+            if (Skee::HasFreeSlot(actor, location)) return false;
+        }
+        return true;
+    }
+
+    void MenuManager::PollSlotFullness() {
+        const auto now = Clock::now();
+        if (now - m_slotCheckAt < kSlotCheckInterval) return;
+        m_slotCheckAt = now;
+
+        const bool full = SlotsFull();
+        if (full == m_slotsFull) return;
+
+        m_slotsFull = full;
+        spdlog::info("Menu: overlay slots {} on {:08X}",
+                     full ? "are full - hiding the stepper and the pack filter"
+                          : "have room again",
+                     GetTargetActor() ? GetTargetActor()->GetFormID() : 0);
+
+        // The applied row goes too: what its items do, and so what they say they do,
+        // depends on this.
+        PopulateAppliedRow();
+        PopulatePickerRow();
+        PopulatePackRow();
+        UpdatePickText();
+        ClearInfo();
     }
 
     // ===== Text =====
@@ -1240,7 +1478,13 @@ namespace NPCEditor::Overlay {
     // row that shares its line, so it names that row: the packs you can browse, or the
     // colours, whichever is up.
     std::wstring MenuManager::RestingInfo() const {
+        // It names whatever is sharing its line, and the palette is the one thing that
+        // still opens with the slots full.
         if (m_colorRowOpen) return L"Colours";
+
+        // Full slots take the stepper and the pack filter away with them, so the line
+        // under where they were is the only place left to say why.
+        if (m_slotsFull) return L"No overlay slots left - take one off to add another";
         return L"Available Overlays";
     }
 
@@ -1248,16 +1492,6 @@ namespace NPCEditor::Overlay {
         if (!m_infoText) return;
         m_infoText->SetText(text.c_str());
         m_infoText->SetVisible(true);
-        m_infoIsHint = false;
-    }
-
-    void MenuManager::ShowHint(const std::wstring& text) {
-        ShowInfo(text);
-        m_infoIsHint = true;
-    }
-
-    void MenuManager::ClearHint() {
-        if (m_infoIsHint) ClearInfo();
     }
 
     void MenuManager::ClearInfo() {
@@ -1275,6 +1509,8 @@ namespace NPCEditor::Overlay {
         if (!m_open) return;
 
         if (m_awaitingNodes) RetryPendingPreview();
+
+        PollSlotFullness();
 
         if (m_repeatId.empty()) return;
 
@@ -1378,6 +1614,14 @@ namespace NPCEditor::Overlay {
                     NextFrameIfOpen([colorIndex](MenuManager& menu) { menu.OnColorActivated(colorIndex); });
                     return true;
                 }
+                if (id == kUndoId) {
+                    NextFrameIfOpen([](MenuManager& menu) { menu.OnUndo(); });
+                    return true;
+                }
+                if (id == kRedoId) {
+                    NextFrameIfOpen([](MenuManager& menu) { menu.OnRedo(); });
+                    return true;
+                }
                 if (id == kClothesId || id == kTargetId ||
                     id == kColorsId || id == kClearId) {
                     NextFrameIfOpen([id](MenuManager& menu) { menu.OnToolActivated(id); });
@@ -1386,66 +1630,18 @@ namespace NPCEditor::Overlay {
                 return false;
             }
 
-            case P3DUI::EventType::HoverEnter: {
-                if (id == kClothesId) {
-                    auto* actor = GetTargetActor();
-                    const bool undressed = actor && UndressManager::GetSingleton()->IsUndressed(actor);
-                    ShowHint(undressed ? L"Put their clothes back on"
-                                       : L"Undress them so you can see the overlays");
-                    return true;
-                }
-                if (id == kClearId) {
-                    ShowHint(L"Empty every overlay slot on them");
-                    return true;
-                }
-                if (id == kColorsId) {
-                    ShowHint(m_colorRowOpen ? L"Hide the colours" : L"Pick a colour");
-                    return true;
-                }
-                if (id == kCommitId) {
-                    ShowHint(L"Keep the one you are looking at");
-                    return true;
-                }
-                if (id == kRandomId) {
-                    ShowHint(PickIsApplied() ? L"Take this one off" : L"Pick one at random");
-                    return true;
-                }
-                if (const auto colorIndex = ParseIndex(id, kColorPrefix);
-                    colorIndex != static_cast<size_t>(-1) && colorIndex < GetPalette().size()) {
-                    ShowHint(GetPalette()[colorIndex].label);
-                    return true;
-                }
-                if (const auto appliedIndex = ParseIndex(id, kAppliedPrefix);
-                    appliedIndex != static_cast<size_t>(-1) && appliedIndex < m_appliedEntries.size()) {
-                    ShowHint(m_appliedEntries[appliedIndex]->displayName);
-                    return true;
-                }
-                if (const auto packIndex = ParseIndex(id, kPackPrefix);
-                    packIndex != static_cast<size_t>(-1)) {
-                    const auto& packs = Catalog::GetSingleton()->GetPacks();
-                    if (packIndex < packs.size()) ShowHint(packs[packIndex].displayName);
-                    return true;
-                }
-                if (id == kTargetId) {
-                    ShowHint(L"Switch between the NPC and yourself");
-                    return true;
-                }
-                if (id == kAnchorId) {
-                    ShowHint(L"Grip to move the menu, trigger to close it");
-                    return true;
-                }
-                return isStepper || id == kPickIconId;
-            }
+            // Nothing to do but claim the event: every element here carries its own
+            // tooltip and 3DUI puts that up beside the hand by itself. The status line
+            // used to echo it, which meant the same sentence in two places and a real
+            // answer - "that slot is full" - wiped by drifting past an unrelated button.
+            case P3DUI::EventType::HoverEnter:
+                return true;
 
             case P3DUI::EventType::HoverExit: {
                 // The hand slid off the chevron while still holding the trigger; carrying
                 // on stepping something the player is no longer pointing at is worse than
                 // stopping.
-                if (isStepper) {
-                    if (id == m_repeatId) EndRepeat();
-                    return true;
-                }
-                ClearHint();
+                if (isStepper && id == m_repeatId) EndRepeat();
                 return true;
             }
 
