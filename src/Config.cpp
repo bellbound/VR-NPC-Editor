@@ -91,12 +91,6 @@ iTngApplyDebounceMs=400
 ; the addon row hidden. TNG has no C++ interface, so the addon list has to come back
 ; through the Papyrus VM, which answers a frame or more after being asked.
 iTngPrimeTimeoutMs=2000
-
-[Persistence]
-; Write applied overlays into SKSE/Plugins/ODF_distribution_rules so that
-; Overlay Distribution Framework reapplies them on the next game start.
-; Turn off to keep every change session-only. (0=off, 1=on)
-bWriteODFRules=1
 )";
 
     // ===== Low-level INI readers using Windows API =====
@@ -284,10 +278,6 @@ bWriteODFRules=1
 
         if (GetConfigOptionBool("Menu", "bPreloadCatalog", &options.preloadCatalog)) {
             spdlog::info("Config: [Menu] bPreloadCatalog = {}", options.preloadCatalog);
-        }
-
-        if (GetConfigOptionBool("Persistence", "bWriteODFRules", &options.writeOdfRules)) {
-            spdlog::info("Config: [Persistence] bWriteODFRules = {}", options.writeOdfRules);
         }
 
         spdlog::info("Config: Loaded successfully");

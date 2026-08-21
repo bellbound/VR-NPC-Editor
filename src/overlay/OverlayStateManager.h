@@ -18,9 +18,8 @@ namespace NPCEditor::Overlay {
             std::string qualifiedId;
             std::string node;      // the SKEE overlay node it occupies, e.g. "Body [Ovl2]"
 
-            // What was actually written into that slot, tint and all, so it can be
-            // written again identically - into the ODF rule file that survives the
-            // restart, and back onto the actor when a cleared overlay is restored.
+            // What was actually written into that slot, tint and all, so a cleared
+            // overlay can be put back on the actor identically.
             //
             // Empty means "we did not put this here": an overlay ODF distributed at
             // spawn, one another mod applied, or one read from a co-save written before
@@ -94,11 +93,10 @@ namespace NPCEditor::Overlay {
     // been updated since the choice was made may well have moved it - so the recorded
     // one is deliberately not trusted for that.
     //
-    // Both places that write an overlay a second time go through here: the ODF rule file
-    // and RestoreAll. Before this existed they both re-derived the look from the catalog
-    // entry, which meant every restart and every restore repainted the overlay in the
-    // pack's own colour instead of the chosen one - and the packs almost all declare
-    // black.
+    // Both places that write an overlay a second time go through here: RestoreAll and an
+    // undo. Before this existed they re-derived the look from the catalog entry, which
+    // meant every restore repainted the overlay in the pack's own colour instead of the
+    // chosen one - and the packs almost all declare black.
     inline Skee::Appearance LookFor(const Entry& entry, const std::optional<Skee::Appearance>& recorded) {
         if (!recorded) return entry.appearance;
 

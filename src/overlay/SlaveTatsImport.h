@@ -6,25 +6,20 @@
 
 // SlaveTats packs are overlays too - the same NiOverride textures ODF distributes, just
 // described in a different manifest. This reads them so the menu can browse them, and
-// declares to ODF only the ones that actually end up on an actor.
+// nothing else: they are applied through RaceMenu like any other overlay and nothing is
+// ever declared to ODF.
 //
-// That split is deliberate. A mod config is a global statement to ODF that an overlay
-// exists, and ODF distribution rules can select overlays by type and theme rather than
-// by id - so declaring a whole installed library would quietly drop hundreds of tattoos
-// into pools that other mods' rules draw from, and NPCs across the game would start
-// wearing overlays nobody picked. Nothing is declared until it is chosen.
+// Earlier builds did declare the applied ones, so an ODF rule could name them after a
+// restart. A mod config is a global statement to ODF that an overlay exists, and rules
+// can select by type and theme rather than by id, so those declarations put tattoos into
+// pools other mods' rules drew from. PurgeGeneratedConfigs takes them back.
 //
 // The SlaveTats mod itself is not required and is never called; only its texture packs
 // are read.
 namespace NPCEditor::Overlay {
-    struct Entry;
-
     namespace SlaveTats {
-        // Not "tattoo": ODF rules can ask for every overlay of a type, and a type another
-        // pack also uses would put these in a pool they were never meant to join. Their
-        // own type keeps a declared overlay reachable by id - which is all our rules use -
-        // and unreachable by accident. It is also the honest label for a ZaZ pack whose
-        // sections are dirt and tears rather than tattoos.
+        // The catalog's type for these entries. Its own rather than "tattoo", which is
+        // also the honest label for a ZaZ pack whose sections are dirt and tears.
         inline constexpr std::string_view kOverlayType = "slavetats";
 
         struct Tattoo {
@@ -56,21 +51,12 @@ namespace NPCEditor::Overlay {
         // Whether a pack id came from here rather than from an installed ODF config.
         bool IsImportedPack(std::string_view modId);
 
-        // Whether an ODF_mod_configs filename is one this generated. The catalog skips
-        // those when it scans: they only ever restate overlays the manifests already
-        // describe, and reading both would list every applied tattoo twice.
+        // Whether an ODF_mod_configs filename is one an earlier build generated. The
+        // catalog skips those when it scans: they only restate overlays the manifests
+        // already describe, and reading both would list every applied tattoo twice.
         bool IsGeneratedConfig(std::string_view filename);
 
-        // Declares exactly these overlays to ODF, as one generated mod config per pack,
-        // so the distribution rules that survive a restart can resolve their ids. Every
-        // other installed tattoo stays unknown to ODF. Entries from real ODF packs are
-        // ignored - they are already declared by the pack that shipped them.
-        //
-        // Rewrites the generated set whole, so taking a tattoo back off an actor
-        // withdraws its declaration too.
-        size_t WriteAppliedConfigs(const std::vector<const Entry*>& applied);
-
-        // Deletes every config this ever generated. Used when the import is switched off.
+        // Deletes every config those builds generated. Run once at load.
         size_t PurgeGeneratedConfigs();
     }
 }

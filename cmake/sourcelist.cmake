@@ -13,7 +13,7 @@ set(sources ${sources}
     src/overlay/OverlayCatalog.cpp
     src/overlay/OverlayStateManager.cpp
     src/overlay/OverlayHistory.cpp
-    src/overlay/OdfWriter.cpp
+    src/overlay/OdfCleanup.cpp
     src/overlay/OverlayColors.cpp
     src/overlay/SlaveTatsImport.cpp
     src/obody/ObodyBridge.cpp

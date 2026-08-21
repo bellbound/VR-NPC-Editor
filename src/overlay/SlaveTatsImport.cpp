@@ -1,12 +1,10 @@
 #include "overlay/SlaveTatsImport.h"
 
 #include "Config.h"
-#include "overlay/OverlayCatalog.h"
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <map>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <unordered_map>
@@ -194,9 +192,9 @@ namespace NPCEditor::Overlay::SlaveTats {
             }
             auto& pack = packs[found->second];
 
-            // This is the half of the qualified id that ends up in the co-save and in the
-            // ODF rule file, so it has to be stable across runs and unique in its pack.
-            // Stable comes from deriving it from the tattoo's own name.
+            // This half of the qualified id ends up in the co-save, so it has to be
+            // stable across runs and unique in its pack. Stable comes from deriving it
+            // from the tattoo's own name.
             auto id = Slug(name);
             if (id.empty()) id = "tattoo";
 
@@ -236,71 +234,5 @@ namespace NPCEditor::Overlay::SlaveTats {
             if (std::filesystem::remove(item.path(), ec)) ++removed;
         }
         return removed;
-    }
-
-    size_t WriteAppliedConfigs(const std::vector<const Entry*>& applied) {
-        // Grouped by pack because a mod config declares exactly one modId, and sorted so
-        // a config's contents do not shuffle between writes for no reason.
-        std::map<std::string, std::vector<const Entry*>> byPack;
-        for (const auto* entry : applied) {
-            if (entry && IsImportedPack(entry->modId)) byPack[entry->modId].push_back(entry);
-        }
-
-        const auto removed = PurgeGeneratedConfigs();
-        if (byPack.empty()) {
-            if (removed > 0) {
-                spdlog::info("SlaveTats: no imported overlays applied, withdrew {} declarations", removed);
-            }
-            return 0;
-        }
-
-        const auto dir = ConfigDir();
-        std::error_code ec;
-        std::filesystem::create_directories(dir, ec);
-
-        size_t written = 0;
-        size_t declared = 0;
-        for (const auto& [modId, entries] : byPack) {
-            nlohmann::json overlays = nlohmann::json::array();
-            for (const auto* entry : entries) {
-                nlohmann::json overlay;
-                overlay["id"] = entry->overlayId;
-                overlay["filepath"] = entry->texture;
-                overlay["slot"] = Skee::LocationName(entry->location);
-                overlay["type"] = kOverlayType;
-                overlay["theme"] = entry->theme;
-                overlay["set"] = entry->set;
-                overlays.push_back(std::move(overlay));
-            }
-
-            nlohmann::json root;
-            root["modId"] = modId;
-            // Empty rather than absent, and empty rather than invented: ODF gates a pack
-            // on whether its textures are on disk, not on a plugin, and one of its own
-            // shipped configs already declares no esp.
-            root["esp"] = "";
-            root["modVersion"] = "1.0";
-            root["configVersion"] = "1.3";
-            root["overlays"] = std::move(overlays);
-
-            const auto file = dir / (std::string(kGeneratedPrefix) + modId + ".json");
-            std::ofstream out(file, std::ios::binary | std::ios::trunc);
-            if (!out.is_open()) {
-                spdlog::error("SlaveTats: cannot write {}", file.string());
-                continue;
-            }
-            out << root.dump(4);
-            if (!out.good()) {
-                spdlog::error("SlaveTats: failed writing {}", file.string());
-                continue;
-            }
-
-            declared += entries.size();
-            ++written;
-        }
-
-        spdlog::info("SlaveTats: declared {} applied overlays to ODF across {} packs",
-                     declared, written);
-        return written;
     }
 }

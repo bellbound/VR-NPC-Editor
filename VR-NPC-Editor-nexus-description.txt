@@ -80,14 +80,14 @@ There are no known incompatibilities - please let me know if you find one.[/size
 [center][color=#ffd966][size=5][b]TECHNICAL INFORMATION[/b][/size][/color][/center]
 
 [color=#ffe599][size=4][b]How it Works[/b][/size][/color]
-[spoiler][size=4]Overlays are written into RaceMenu's overlay slots, which is the same place every other overlay mod puts them. That alone lasts until you quit, so anything you keep is also mirrored into a single rule file under [i]Data\SKSE\Plugins\ODF_distribution_rules[/i], which Overlay Distribution Framework reads at game start and applies again. The file belongs to this mod and is rewritten whole; no other mod's rules are read or touched.
+[spoiler][size=4]Overlays are written into RaceMenu's overlay slots, which is the same place every other overlay mod puts them, and they are written to stay: RaceMenu saves them with your game and puts them back on load, in the same slot and the same colour you chose. Nothing is written outside RaceMenu.
 
 Presets and weight are handed straight to OBody NG, and addons to The New Gentleman.
 
-Only the overlays you actually put on someone are ever declared to ODF. Your installed packs are not announced to it wholesale, so nothing you own quietly joins the pools other mods' distribution rules draw from.[/size][/spoiler]
+Overlay Distribution Framework is still needed, but only for its pack list - it is where the menu learns which overlay packs you have installed. Nothing you put on anyone is announced to it, so nothing you own quietly joins the pools other mods' distribution rules draw from.[/size][/spoiler]
 
 [color=#ffe599][size=4][b]Limitations[/b][/size][/color]
-[spoiler][size=4]The overlay editor only offers itself on unique, named NPCs. Generic actors - bandits, guards, citizens - share one base record between all of them, and an overlay saved against that record would appear on every one of them.
+[spoiler][size=4]The overlay editor only offers itself on unique, named NPCs. Generic actors - bandits, guards, citizens - share one base record between all of them.
 
 An actor has a fixed number of overlay slots, set by RaceMenu in [i]skeevr.ini[/i] - six per body part by default. When they are full the menu says so and you take one off to make room. Raising [i]iNumOverlays[/i] in that file gives you more.
 
@@ -109,7 +109,6 @@ Weight is stored on the base record, so that stepper also only appears on unique
 [b]iPresetRepeatDelayMs[/b] and [b]iPresetRepeatIntervalMs[/b] - how long an arrow has to be held before it starts stepping on its own, and how fast it steps after that.
 [b]iWeightResetDebounceMs[/b], [b]iTngApplyDebounceMs[/b] and [b]iTngPrimeTimeoutMs[/b] - timings for changes that re-equip or re-skin the actor. Leave these alone unless something is misbehaving.
 
-[b]bWriteODFRules[/b] - turn off to make every change last only for the session.
 [b]logLevel[/b] - trace, debug, info, warn, error, critical or off. Worth raising to debug if you are reporting something.[/size][/spoiler]
 
 
@@ -125,7 +124,7 @@ Weight is stored on the base record, so that stepper also only appears on unique
 [size=4]No. The overlay you are looking at when you leave is the one they keep. The check button is a shortcut, not a toll.[/size]
 
 [color=#ffe599][size=4][b]Why can't I edit bandits or guards?[/b][/size][/color]
-[size=4]They all share a single base record, and an overlay stored against it would end up on every one of them. Their bodies can still be edited - only the overlay editor is limited this way.[/size]
+[size=4]They all share a single base record. Their bodies can still be edited - only the overlay editor is limited this way.[/size]
 
 [color=#ffe599][size=4][b]It says every overlay slot is full.[/b][/size][/color]
 [size=4]An actor has six slots per body part by default. Take one off in the menu, or raise [i]iNumOverlays[/i] in RaceMenu's [i]skeevr.ini[/i].[/size]
@@ -134,7 +133,7 @@ Weight is stored on the base record, so that stepper also only appears on unique
 [size=4]No. Only the packs themselves are read, and the mod is never called.[/size]
 
 [color=#ffe599][size=4][b]I uninstalled the mod and the NPCs still have their tattoos.[/b][/size][/color]
-[size=4]That is Overlay Distribution Framework applying the rule file this mod left behind. Delete it from [i]Data\SKSE\Plugins\ODF_distribution_rules[/i] and they stop.[/size]
+[size=4]The overlays live in RaceMenu's save data, not in this mod, so removing the mod leaves them exactly where they were. Take them off before you uninstall, or clear them in RaceMenu.[/size]
 
 [color=#ffe599][size=4][b]Can I edit myself?[/b][/size][/color]
 [size=4]Yes - open the menu on anyone and press the target button to switch to yourself.[/size]

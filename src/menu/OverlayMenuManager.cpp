@@ -6,7 +6,6 @@
 #include "health/HealthCheckManager.h"
 #include "menu/EditSession.h"
 #include "menu/MenuRouter.h"
-#include "overlay/OdfWriter.h"
 #include "overlay/OverlayColors.h"
 #include "overlay/OverlayHistory.h"
 #include "overlay/OverlayStateManager.h"
@@ -602,8 +601,6 @@ namespace NPCEditor::Overlay {
         History::GetSingleton()->Record(actor, std::move(before));
         EditSession::GetSingleton()->NoteChange("overlay");
 
-        PersistToOdf();
-
         PopulateAppliedRow();
         UpdateHistoryButtons();
         UpdatePickIcon();
@@ -946,8 +943,6 @@ namespace NPCEditor::Overlay {
         EditSession::GetSingleton()->NoteChange("overlay");
 
         ClearInfo();
-        PersistToOdf();
-
         PopulateAppliedRow();
         UpdateHistoryButtons();
         UpdatePickIcon();
@@ -991,8 +986,6 @@ namespace NPCEditor::Overlay {
         if (m_selectedOverlay == entry->qualifiedId) m_selectedOverlay.clear();
         History::GetSingleton()->Record(actor, std::move(before));
         EditSession::GetSingleton()->NoteChange("overlay");
-
-        PersistToOdf();
 
         PopulateAppliedRow();
         UpdateHistoryButtons();
@@ -1199,7 +1192,6 @@ namespace NPCEditor::Overlay {
 
         History::GetSingleton()->Record(actor, std::move(before));
         EditSession::GetSingleton()->NoteChange("overlay");
-        PersistToOdf();
         UpdateHistoryButtons();
     }
 
@@ -1295,8 +1287,6 @@ namespace NPCEditor::Overlay {
         EditSession::GetSingleton()->NoteChange("overlay");
 
         ClearInfo();
-        PersistToOdf();
-
         PopulateAppliedRow();
         UpdateHistoryButtons();
         UpdatePickIcon();
@@ -1395,7 +1385,6 @@ namespace NPCEditor::Overlay {
         m_selectedOverlay.clear();
 
         EditSession::GetSingleton()->NoteChange("overlay");
-        PersistToOdf();
 
         // Rows only, no SyncFromActor: the restore's writes are still queued in the
         // Papyrus VM, so reconciling the record against the actor's live slots now would
@@ -1504,11 +1493,6 @@ namespace NPCEditor::Overlay {
 
     void MenuManager::ClearInfo() {
         ShowInfo(RestingInfo());
-    }
-
-    void MenuManager::PersistToOdf() {
-        if (!Config::options.writeOdfRules) return;
-        OdfWriter::WriteAll(*StateManager::GetSingleton());
     }
 
     // ===== Frame tick =====

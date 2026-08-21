@@ -20,7 +20,7 @@ namespace NPCEditor::Overlay {
     enum class Gender : uint8_t { Any, Male, Female };
 
     struct Entry {
-        std::string qualifiedId;   // "titkit:light_1_big" - the id ODF distribution rules use
+        std::string qualifiedId;   // "titkit:light_1_big" - ODF's own id for the overlay
         std::string overlayId;     // "light_1_big"
         std::string modId;         // "titkit"
         std::string texture;       // Data-relative, backslashes, verified to exist

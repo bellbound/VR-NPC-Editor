@@ -190,12 +190,8 @@ namespace NPCEditor::Overlay {
     void Catalog::EnumerateConfigs() {
         // SlaveTats packs are overlays like any other, just described in their own
         // manifest format, so they are read straight into entries alongside the ODF
-        // ones. Nothing about them is written anywhere until one is applied.
-        if (Config::options.importSlaveTats) {
-            m_slaveTatsFiles = SlaveTats::FindManifests();
-        } else if (const auto removed = SlaveTats::PurgeGeneratedConfigs(); removed > 0) {
-            spdlog::info("Catalog: SlaveTats import is off, withdrew {} declarations", removed);
-        }
+        // ones. Nothing about them is ever written anywhere.
+        if (Config::options.importSlaveTats) m_slaveTatsFiles = SlaveTats::FindManifests();
 
         std::filesystem::path dir(Config::GetSKSEPluginsPath());
         dir /= "ODF_mod_configs";
@@ -216,8 +212,8 @@ namespace NPCEditor::Overlay {
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             if (ext != ".json") continue;
 
-            // Our own declarations of what is applied. The manifests they came from are
-            // the authority, and reading both would list every applied tattoo twice.
+            // A declaration an earlier build left behind. The manifests it came from
+            // are the authority, and reading both would list a tattoo twice.
             if (SlaveTats::IsGeneratedConfig(item.path().filename().string())) continue;
 
             m_configFiles.push_back(item.path().string());

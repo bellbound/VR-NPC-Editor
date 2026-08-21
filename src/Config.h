@@ -23,9 +23,6 @@ namespace Config {
         bool enableTngAddon      = true;   // Show the TNG addon stepper, if TNG is installed
         int  tngApplyDebounceMs  = 400;    // Minimum gap between TNG addon writes
         int  tngPrimeTimeoutMs   = 2000;   // Give up waiting for TNG's Papyrus answers after this
-
-        // ===== Persistence =====
-        bool writeOdfRules = true;         // Write choices to an ODF distribution rule file for next boot
     };
 
     extern Options options;
@@ -36,6 +33,6 @@ namespace Config {
     // Get path to INI file
     const std::string& GetConfigPath();
 
-    // <game>/Data/SKSE/Plugins - the anchor both the INI and the ODF rule file hang off
+    // <game>/Data/SKSE/Plugins - the anchor the INI and the ODF pack configs hang off
     const std::string& GetSKSEPluginsPath();
 }

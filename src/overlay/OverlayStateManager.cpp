@@ -145,8 +145,8 @@ namespace NPCEditor::Overlay {
                 // The tint we already have on record for this overlay survives the
                 // reconcile. Reading the slot tells us the texture and nothing else, so
                 // rebuilding the row from the actor alone would forget the colour of
-                // every overlay we put on - and the next write to the ODF rule file
-                // would put the pack's own black back.
+                // every overlay we put on, and a restore would repaint it in the pack's
+                // own - which across the installed packs is almost always black.
                 auto known = std::find_if(state->applied.begin(), state->applied.end(),
                                           [&](const Applied& a) { return a.qualifiedId == entry->qualifiedId; });
 
@@ -196,8 +196,8 @@ namespace NPCEditor::Overlay {
         if (!Skee::ApplyToSlot(actor, state->isFemale, *node, appearance)) return false;
 
         // Recorded, not recomputed later: this is the only moment the chosen tint is
-        // known, and everything that writes the overlay again - the ODF rule file, a
-        // restore - has to write the same thing or the colour changes under the player.
+        // known, and a restore has to write the same thing or the colour changes under
+        // the player.
         state->applied.push_back({entry.qualifiedId, *node, appearance});
         spdlog::info("State: applied {} to {:08X} ({}) in \"{}\"",
                      entry.qualifiedId, actor->GetFormID(), state->editorId, *node);

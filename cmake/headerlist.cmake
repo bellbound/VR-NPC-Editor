@@ -20,7 +20,7 @@ set(headers ${headers}
     src/overlay/OverlayCatalog.h
     src/overlay/OverlayStateManager.h
     src/overlay/OverlayHistory.h
-    src/overlay/OdfWriter.h
+    src/overlay/OdfCleanup.h
     src/overlay/OverlayColors.h
     src/overlay/SlaveTatsImport.h
     src/obody/ObodyBridge.h

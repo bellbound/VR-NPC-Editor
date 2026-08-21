@@ -221,8 +221,6 @@ namespace NPCEditor::Health {
 
     bool CanEditOverlays(RE::Actor* actor) {
         if (!actor || !IsFeatureAvailable(Feature::Overlays)) return false;
-        // Without an editorID the choice cannot be written to an ODF rule, so it would
-        // silently vanish on the next boot. Better to not offer it.
         return !NpcUtils::GetPersistableEditorID(actor).empty();
     }
 

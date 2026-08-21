@@ -23,10 +23,9 @@ namespace NpcUtils
         return true;
     }
 
-    // ODF distribution rules can only target an NPC by editorID, and a generic base
-    // record's editorID is shared by every actor spawned from it. Anything but a
-    // unique, named NPC would spread one tattoo across a whole bandit template, so
-    // those actors are excluded from the menu entirely.
+    // Only unique, named NPCs are offered the overlay editor. The reason was ODF, whose
+    // rules could target an NPC only by editorID - one a whole bandit template shares.
+    // RaceMenu persists per actor instead, so this is now a choice rather than a limit.
     inline std::string GetPersistableEditorID(RE::Actor* actor)
     {
         auto* base = actor ? actor->GetActorBase() : nullptr;

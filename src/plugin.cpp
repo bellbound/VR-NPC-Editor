@@ -11,7 +11,7 @@
 #include "menu/MenuRouter.h"
 #include "menu/OverlayMenuManager.h"
 #include "obody/ObodyBridge.h"
-#include "overlay/OdfWriter.h"
+#include "overlay/OdfCleanup.h"
 #include "overlay/OverlayCatalog.h"
 #include "overlay/OverlayStateManager.h"
 #include "skee/SkeeBridge.h"
@@ -140,7 +140,6 @@ void MessageHandler(SKSE::MessagingInterface::Message* message) {
                 spdlog::error("No editor is available - not registering the actor menu entry");
             }
 
-            spdlog::info("ODF rules will be written to {}", NPCEditor::Overlay::OdfWriter::GetOutputPath());
             break;
         }
 
@@ -167,6 +166,9 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse) {
     // Before anything schedules work: the chunked menu builds and the body menu's tick
     // both hang off this, and without it they fall back to running inside one frame.
     NPCEditor::FrameHook::Install();
+
+    // Before ODF reads its rules, which it does once the game data is loaded.
+    NPCEditor::Overlay::OdfCleanup::RemoveLegacyFiles();
 
     auto* messaging = SKSE::GetMessagingInterface();
     if (!messaging->RegisterListener("SKSE", MessageHandler)) {

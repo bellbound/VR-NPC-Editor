@@ -54,19 +54,15 @@ A missing optional dependency hides a feature and says so in the log; it never p
 
 ## How choices persist
 
-Overlays are written into SKEE's overlay slots, which lasts until you quit. Anything committed is also mirrored into a single ODF rule file:
+Overlays are written into SKEE's overlay slots as persistent NiOverride overrides, so RaceMenu records them in its own co-save and puts them back — same slot, same tint — when the game is loaded. That is the whole persistence story; nothing is written outside RaceMenu.
 
-```
-Data\SKSE\Plugins\ODF_distribution_rules\VRNPCEditor_distribution.json
-```
+This mod's co-save record holds the same set again, keyed by form: which overlays are ours, which slot each sits in, and the tint each was given. That is what the applied row highlights, what "take ours off" knows to remove, and what a restore puts back. It never paints anything by itself on load — RaceMenu has already done that.
 
-ODF reads it at game start and applies it again. The file is owned exclusively by this mod and rewritten whole; no other mod's rule file is read or touched. `bWriteODFRules=0` makes every change session-only.
+Earlier builds mirrored every choice into an ODF distribution rule file instead. ODF re-applied those rules at game start on top of the overlays RaceMenu had already restored, so a choice landed twice — once where RaceMenu put it and once wherever ODF found a free slot, in ODF's own colour rather than the chosen one — and ran the actor out of slots doing it. `OdfCleanup` deletes that file, and the SlaveTats mod configs written to support it, once at plugin load.
 
-The tint that was actually written is recorded alongside the overlay and is what goes into the rule — not the pack's own declaration, which across the installed packs is almost always `0x000000`.
+ODF is still required, but only as a catalog: its `ODF_mod_configs` are where the list of installed overlay packs comes from.
 
-Only overlays actually put on an actor are ever declared to ODF. Declaring a whole installed library would drop hundreds of overlays into the pools other mods' distribution rules draw from, and NPCs across the game would start wearing things nobody picked.
-
-**Overlays are limited to unique, named NPCs.** ODF rules target an actor by editorID, and a generic base record's editorID is shared by every actor spawned from it. The body editor has no such limit — OBody stores its assignment per actor instance.
+**Overlays are limited to unique, named NPCs.** That came from ODF, whose rules could target an actor only by editorID — one shared by every actor spawned from a generic base record. RaceMenu has no such limit, so the restriction is now a choice rather than a constraint. The body editor never had it — OBody stores its assignment per actor instance.
 
 ---
 
@@ -79,7 +75,6 @@ Only overlays actually put on an actor are ever declared to ODF. Declaring a who
 | `[General]` | `logLevel` |
 | `[Menu]` | `fElementScale`, `sDefaultPack`, `bImportSlaveTats`, `bPreloadCatalog` |
 | `[Body]` | `bEnableBodyMenu`, `bEnableWeightButton`, `bEnableTngAddon`, `iPresetRepeatDelayMs`, `iPresetRepeatIntervalMs`, `iWeightResetDebounceMs`, `iTngApplyDebounceMs`, `iTngPrimeTimeoutMs` |
-| `[Persistence]` | `bWriteODFRules` |
 
 ---
 

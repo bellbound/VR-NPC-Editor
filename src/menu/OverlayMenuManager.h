@@ -199,7 +199,6 @@ namespace NPCEditor::Overlay {
         void UpdateAppliedText();
 
         void SelectDefaultPack();
-        void PersistToOdf();
 
         P3DUI::Interface001* m_api = nullptr;
         P3DUI::Root* m_root = nullptr;
