@@ -289,8 +289,22 @@ RE::BSTSmartPointer<RE::BSScript::Array> PapyrusInterface::CreateActorArray(
         return nullptr;
     }
 
+    // `CreateArray` wants the ELEMENT type, not the array type. Handing it
+    // `kObjectArray` leaves the element type a class-less `kObject`, and the
+    // array that comes back reports its type as the bare enumerator 11 - an
+    // object array whose class pointer is null. Papyrus then rejects it against
+    // the declared `Actor[]` parameter, and anything that tries to name the type
+    // for a log line (PapyrusTweaks' signature logger does) dereferences that
+    // null and takes the game down. So resolve `Actor` to its real script type
+    // and build the array from that, the way CommonLib's own array packer does.
+    RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> actorType;
+    if (!vm->GetScriptObjectType("Actor", actorType) || !actorType) {
+        spdlog::error("PapyrusInterface: could not resolve the Actor script type");
+        return nullptr;
+    }
+
     RE::BSTSmartPointer<RE::BSScript::Array> array;
-    if (!vm->CreateArray(RE::BSScript::TypeInfo::RawType::kObjectArray, "Actor",
+    if (!vm->CreateArray(RE::BSScript::TypeInfo(actorType->GetRawType()),
                          static_cast<uint32_t>(valid.size()), array) ||
         !array) {
         return nullptr;
@@ -308,7 +322,7 @@ RE::BSTSmartPointer<RE::BSScript::Array> PapyrusInterface::CreateStringArray(
         return nullptr;
     }
     RE::BSTSmartPointer<RE::BSScript::Array> array;
-    if (!vm->CreateArray(RE::BSScript::TypeInfo::RawType::kStringArray, "",
+    if (!vm->CreateArray(RE::BSScript::TypeInfo(RE::BSScript::TypeInfo::RawType::kString),
                          static_cast<uint32_t>(strings.size()), array) ||
         !array) {
         return nullptr;
